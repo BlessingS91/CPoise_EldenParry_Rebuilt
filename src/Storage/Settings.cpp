@@ -113,6 +113,21 @@ void Settings::LoadINI(const wchar_t* a_path)
 	get_value(Damage.GauntletWeightContribution, "Unarmed Damage Settings", "Gauntlet Weight Contribution", ";How much influence the gaunlet weight has to poise damage");
 	get_value(Damage.UnarmedSkillContribution, "Unarmed Damage Settings", "Unarmed Skill Contribution", ";How much influence the Unarmed skill has to poise damage");
 
+	get_value(Damage.NormalImpactThreshold,
+		"Impact Thresholds",
+		"Normal Impact",
+		";Minimum poise damage percentage for normal impact");
+
+	get_value(Damage.PowerfulImpactThreshold,
+		"Impact Thresholds",
+		"Powerful Impact",
+		";Minimum poise damage percentage for powerful impact");
+
+	get_value(Damage.SeismicImpactThreshold,
+		"Impact Thresholds",
+		"Seismic Impact",
+		";Minimum poise damage percentage for seismic impact");
+
 	get_value(TrueHUD.SpecialBar, "True HUD integration", "TrueHUD special bar usage", ";true or false");
 	get_value(TrueHUD.SpecialBar, "True HUD integration", "Ignore Valhalla Combat", ";true or false");
 
@@ -130,6 +145,12 @@ void Settings::LoadSettings()
 	LoadGameSettings();
 	LoadINI(L"Data/SKSE/Plugins/ChocolatePoise.ini");
 	LoadJSON(L"Data/SKSE/Plugins/ChocolatePoise.json");
+
+	logger::debug(
+		FMT_STRING("Loaded Impact Thresholds: Normal={} Powerful={} Seismic={}"),
+		Damage.NormalImpactThreshold,
+		Damage.PowerfulImpactThreshold,
+		Damage.SeismicImpactThreshold);
 
 	if (PoiseAVHUD::trueHUDInterface) {
 		if (PoiseAVHUD::trueHUDInterface->RequestSpecialResourceBarsControl(SKSE::GetPluginHandle()) == TRUEHUD_API::APIResult::OK) {

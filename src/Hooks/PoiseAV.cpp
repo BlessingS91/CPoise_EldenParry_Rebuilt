@@ -119,16 +119,27 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 		poiseDamagePercent = a_poiseDamage / avManager->GetActorValueMax(g_avName, a_target);
 
 		if (a_hitData && a_hitData->flags && a_hitData->flags.all(RE::HitData::Flag::kBlocked)) {
-			if (poiseDamagePercent >= 0.1 && poiseDamagePercent < 0.25) {
+			if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
+				poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
 				Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= 0.25 && poiseDamagePercent < 0.5) {
+			} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
+					   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
 				Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= 0.5) {
+			} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
 				Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
 			}
 		}
+
+		logger::debug(
+			FMT_STRING("Impact Check: Target={} PoiseDamage={} PoisePercent={} Thresholds[N/P/S]={}/{}/{}"),
+			a_target->GetName(),
+			a_poiseDamage,
+			poiseDamagePercent,
+			settings->Damage.NormalImpactThreshold,
+			settings->Damage.PowerfulImpactThreshold,
+			settings->Damage.SeismicImpactThreshold);
 	}
 
 	// logger::info("DACP Branch. {} attempting to damage poise. current value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));

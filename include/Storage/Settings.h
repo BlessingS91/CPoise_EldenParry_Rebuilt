@@ -69,6 +69,10 @@ public:
 		float GauntletWeightContribution{ 1.0 };
 		float UnarmedSkillContribution{ 0.2 };
 
+		float NormalImpactThreshold{ 0.10f };
+		float PowerfulImpactThreshold{ 0.25f };
+		float SeismicImpactThreshold{ 0.50f };
+
 	} Damage;
 
 	struct

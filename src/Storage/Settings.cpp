@@ -2,7 +2,6 @@
 
 #include "UI/PoiseAVHUD.h"
 
-
 float Settings::GetDamageMultiplier(RE::Actor* a_aggressor, RE::Actor* a_target)
 {
 	if (a_aggressor && (a_aggressor->IsPlayerRef() || a_aggressor->IsPlayerTeammate())) {
@@ -54,7 +53,6 @@ void Settings::LoadGameSettings()
 	fDiffMultHPToPCH = gameSettingCollection->GetSetting("fDiffMultHPToPCH")->GetFloat();
 	fDiffMultHPToPCVH = gameSettingCollection->GetSetting("fDiffMultHPToPCVH")->GetFloat();
 	fDiffMultHPToPCL = gameSettingCollection->GetSetting("fDiffMultHPToPCL")->GetFloat();
-	
 }
 
 void Settings::LoadINI(const wchar_t* a_path)
@@ -88,10 +86,11 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.ToPCMult = static_cast<float>(ini.GetDoubleValue("Damage", "ToPCMult", Damage.ToPCMult));
 	Damage.ToNPCMult = static_cast<float>(ini.GetDoubleValue("Damage", "ToNPCMult", Damage.ToNPCMult));
 
+	Damage.PoiseScaling = static_cast<float>(ini.GetDoubleValue("Damage", "PoiseScaling", Damage.PoiseScaling));
+
 	Damage.WeightContribution = static_cast<float>(ini.GetDoubleValue("Damage", "WeightContribution", Damage.WeightContribution));
 	Damage.GauntletWeightContribution = static_cast<float>(ini.GetDoubleValue("Damage", "GauntletWeightContribution", Damage.GauntletWeightContribution));
 	Damage.UnarmedSkillContribution = static_cast<float>(ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution));
-
 
 	TrueHUD.SpecialBar = ini.GetBoolValue("TrueHUD", "SpecialBar", TrueHUD.SpecialBar) && (!GetModuleHandleA("valhallaCombat.dll") || ini.GetBoolValue("TrueHUD", "IgnoreValhallaCombat", false));
 
@@ -103,10 +102,12 @@ void Settings::LoadINI(const wchar_t* a_path)
 	get_value(Damage.BowMult, "Damage Settings", "Bow Mult", ";Poise Damage Multiplier for Bow attacks");
 	get_value(Damage.CreatureMult, "Damage Settings", "Creature Mult", ";Poise damage from creatures");
 	get_value(Damage.MeleeMult, "Damage Settings", "Melee Mult", ";Poise damage multiplier from melee attacks");
-	
+
 	get_value(Damage.ToPCMult, "General Damage Settings", "Player Multiplier", ";Poise damage multiplier for the Player");
 	get_value(Damage.ToNPCMult, "General Damage Settings", "NPC Multiplier", ";Poise damage multiplier to NPCs");
 	get_value(Damage.WeightContribution, "General Damage Settings", "Weight Contribution", ";How much influence weight has to your poise damage");
+
+	get_value(Damage.PoiseScaling, "General Damage Settings", "Poise Scaling", ";How much difficulty damage affects poise");
 
 	get_value(Damage.UnarmedMult, "Unarmed Damage Settings", "Unarmed Damage Mult", ";Poise damage from unarmed attacks");
 	get_value(Damage.GauntletWeightContribution, "Unarmed Damage Settings", "Gauntlet Weight Contribution", ";How much influence the gaunlet weight has to poise damage");

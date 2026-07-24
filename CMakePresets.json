@@ -5,7 +5,7 @@
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": {
 					"type": "STRING",
-					"value": "Debug"
+					"value": "Release"
 				}
 			},
 			"errors": {
@@ -22,7 +22,7 @@
 			"cacheVariables": {
 				"CMAKE_TOOLCHAIN_FILE": {
 					"type": "STRING",
-					"value": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake"
+					"value": "C:/Users/spenc/Documents/Code/vcpkg/scripts/buildsystems/vcpkg.cmake"
 				}
 			},
 			"hidden": true,
@@ -48,7 +48,7 @@
 				"value": "x64"
 			},
 			"cacheVariables": {
-				"CMAKE_CXX_FLAGS": "/EHsc /MP /W4 /WX"
+				"CMAKE_CXX_FLAGS": "/EHsc /MP /W4"
 			},
 			"generator": "Visual Studio 17 2022",
 			"inherits": [

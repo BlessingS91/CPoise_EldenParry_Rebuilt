@@ -39,7 +39,6 @@ public:
 	float fDiffMultHPToPCH;
 	float fDiffMultHPToPCVH;
 	float fDiffMultHPToPCL;
-	
 
 	struct
 	{
@@ -63,6 +62,8 @@ public:
 
 		float ToPCMult{ 1.0 };
 		float ToNPCMult{ 1.0 };
+
+		float PoiseScaling{ 1.0 };
 
 		float WeightContribution{ 2.0 };
 		float GauntletWeightContribution{ 1.0 };

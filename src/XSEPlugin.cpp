@@ -14,7 +14,6 @@
 
 void OnDataLoaded()
 {
-   
 }
 
 void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
@@ -117,11 +116,10 @@ void InitializeLog()
 	spdlog::set_pattern("[%l] %v"s);
 }
 
-EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface *a_skse)
+EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
 {
 #ifndef NDEBUG
-	while (!IsDebuggerPresent())
-	{
+	while (!IsDebuggerPresent()) {
 	};
 #endif
 
@@ -138,17 +136,16 @@ EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(con
 	return true;
 }
 
-EXTERN_C [[maybe_unused]] __declspec(dllexport) constinit auto SKSEPlugin_Version = []() noexcept
-{
+EXTERN_C [[maybe_unused]] __declspec(dllexport) constinit auto SKSEPlugin_Version = []() noexcept {
 	SKSE::PluginVersionData v;
 	v.PluginName("PluginName");
-	v.PluginVersion({1, 0, 0, 0});
+	v.PluginVersion({ 1, 0, 0, 0 });
 	v.UsesAddressLibrary(true);
 	v.HasNoStructUse(true);
 	return v;
 }();
 
-EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface *, SKSE::PluginInfo *pluginInfo)
+EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface*, SKSE::PluginInfo* pluginInfo)
 {
 	pluginInfo->name = SKSEPlugin_Version.pluginName;
 	pluginInfo->infoVersion = SKSE::PluginInfo::kVersion;

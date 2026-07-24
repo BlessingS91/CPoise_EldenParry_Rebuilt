@@ -5,7 +5,6 @@
 #include "Storage/Settings.h"
 #include "UI/PoiseAVHUD.h"
 
-
 #undef max
 #include <limits>
 //#undef min
@@ -17,7 +16,7 @@ bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 		case 0:
 			return true;
 		case 1:
-		    // return !GetBoolVariable(a_actor, "IsStaggering");
+			// return !GetBoolVariable(a_actor, "IsStaggering");
 			return !a_actor->AsActorState()->actorState2.staggered;
 		}
 	}
@@ -67,7 +66,6 @@ float PoiseAV::Score_GetBaseActorValue(RE::Actor* a_actor)
 		health = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
 
 	health *= settings->Health.BaseMult;
-	
 
 	//if (auto levelledModifier = (RE::ExtraLevCreaModifier*)a_actor->extraList.GetByType(RE::ExtraDataType::kLevCreaModifier)) {
 	//	auto modifier = levelledModifier->modifier;
@@ -96,10 +94,21 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	auto                               avManager = AVManager::GetSingleton();
 	std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 
-	auto poiseDamagePercent = a_poiseDamage / avManager->GetActorValueMax(g_avName, a_target);
+	float poiseDamagePercent = 0.0f;
 
 	if (a_poiseDamage > 0 && a_target != a_aggressor) {
-		a_poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
+		float damageMultiplier = settings->GetDamageMultiplier(a_aggressor, a_target);
+
+		damageMultiplier = 1.0f + (damageMultiplier - 1.0f) * settings->Damage.PoiseScaling;
+
+		logger::debug(
+			FMT_STRING("Poise Scaling: Before={} DifficultyMult={} PoiseScaling={} FinalMult={}"),
+			a_poiseDamage,
+			settings->GetDamageMultiplier(a_aggressor, a_target),
+			settings->Damage.PoiseScaling,
+			damageMultiplier);
+
+		a_poiseDamage *= damageMultiplier;
 
 		if (a_target->IsPlayerRef()) {
 			a_poiseDamage *= settings->Damage.ToPCMult;
@@ -107,18 +116,16 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			a_poiseDamage *= settings->Damage.ToNPCMult;
 		}
 
-		if (a_hitData && a_hitData->flags && a_hitData->flags.all(RE::HitData::Flag::kBlocked)) {
+		poiseDamagePercent = a_poiseDamage / avManager->GetActorValueMax(g_avName, a_target);
 
-			if(poiseDamagePercent >= 0.1 && poiseDamagePercent < 0.25)
-			{
+		if (a_hitData && a_hitData->flags && a_hitData->flags.all(RE::HitData::Flag::kBlocked)) {
+			if (poiseDamagePercent >= 0.1 && poiseDamagePercent < 0.25) {
 				Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= 0.25 && poiseDamagePercent < 0.5) 
-			{
+			} else if (poiseDamagePercent >= 0.25 && poiseDamagePercent < 0.5) {
 				Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= 0.5) 
-			{
+			} else if (poiseDamagePercent >= 0.5) {
 				Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
 			}
 		}
@@ -127,7 +134,7 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	// logger::info("DACP Branch. {} attempting to damage poise. current value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));
 
 	avManager->DamageActorValue(g_avName, a_target, a_poiseDamage);
-	
+
 	// logger::info("DACP Branch. {} poise damaged. current value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));
 
 	auto poise = avManager->GetActorValue(g_avName, a_target);
@@ -140,9 +147,8 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 		// Stagger duration is relative to the power of the attacking weapon
 		logger::debug(FMT_STRING("Poise Damage Percent {}"), poiseDamagePercent);
-		
-		if (!GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
 
+		if (!GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
 			TryStagger(a_target, poiseDamagePercent, a_aggressor);
 			a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
 		}
@@ -155,23 +161,18 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 	if (a_actor->GetActorRuntimeData().currentProcess && a_actor->GetActorRuntimeData().currentProcess->InHighProcess() && a_actor->Is3DLoaded()) {
 		auto settings = Settings::GetSingleton();
 
-
 		if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
-			if (!CanDamageActor(a_actor)){
-
+			if (!CanDamageActor(a_actor)) {
 				PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(a_actor->GetHandle(), TRUEHUD_API::BarColorType::BarColor, 0x808080);
 
 				// logger::info("Update hook active. {} is staggered. Overridding poise bar ", a_actor->GetName());
 
-			} else{
-
+			} else {
 				PoiseAVHUD::trueHUDInterface->RevertSpecialBarColor(a_actor->GetHandle(), TRUEHUD_API::BarColorType::BarColor);
-
 			}
-				
 		}
 
-		auto avManager = AVManager::GetSingleton();
+		auto                               avManager = AVManager::GetSingleton();
 		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 		if (avManager->GetActorValue(g_avName, a_actor) == 0.0f) {
 			// logger::info("Update Branch. {} poise is depleted. Value: {} ", a_actor->GetName(), avManager->GetActorValue(g_avName, a_actor));
@@ -190,13 +191,11 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 				RemoveFromFaction(a_actor, ForceFullBodyStagger);
 			} else {
 				// logger::info("Update Branch. {} isnot Staggered. Attempting stagger", a_actor->GetName());
-				
-				if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
 
+				if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
 					TryStagger(a_actor, 0.5f, nullptr);
 					a_actor->SetGraphVariableBool("bPoise_IsStaggered", false);
 				}
-				
 			}
 		} else {
 			avManager->RestoreActorValue(g_avName, a_actor, avManager->GetActorValueMax(g_avName, a_actor) * settings->Health.RegenRate * a_delta);

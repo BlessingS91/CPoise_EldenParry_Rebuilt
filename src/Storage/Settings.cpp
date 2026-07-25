@@ -74,6 +74,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	Health.BaseMult = static_cast<float>(ini.GetDoubleValue("Health", "BaseMult", Health.BaseMult));
 	Health.ArmorMult = static_cast<float>(ini.GetDoubleValue("Health", "ArmorMult", Health.ArmorMult));
+	Health.ArmorMultMin = static_cast<float>(ini.GetDoubleValue("Health", "ArmorMultMin", Health.ArmorMultMin));
 	Health.RegenRate = static_cast<float>(ini.GetDoubleValue("Health", "RegenRate", Health.RegenRate));
 
 	Damage.BashMult = static_cast<float>(ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult));
@@ -130,8 +131,6 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	get_value(TrueHUD.SpecialBar, "True HUD integration", "TrueHUD special bar usage", ";true or false");
 	get_value(TrueHUD.SpecialBar, "True HUD integration", "Ignore Valhalla Combat", ";true or false");
-
-	(void)ini.SaveFile(a_path);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)

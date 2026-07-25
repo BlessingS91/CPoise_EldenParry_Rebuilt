@@ -121,15 +121,20 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 
 		stagger *= damageRatio;
 	}
-	float armorMult = 1.0f -
-	                  (target->GetActorRuntimeData().armorRating * 0.12f +
-						  target->GetActorRuntimeData().armorBaseFactorSum) /
-	                      100.0f;
 
-	if (armorMult < settings->Health.ArmorMultMin)
+	float totalArmor = target->GetActorRuntimeData().armorRating;
+	float armorReduction = (totalArmor * settings->Health.ArmorMult +
+							   target->GetActorRuntimeData().armorBaseFactorSum) /
+	                       100.0f;
+
+	float armorMult = 1.0f - armorReduction;
+
+	if (armorMult < settings->Health.ArmorMultMin) {
 		armorMult = settings->Health.ArmorMultMin;
+	}
 
 	stagger *= armorMult;
+
 	if (stagger > 0.00) {
 		if (hitData->flags.all(RE::HitData::Flag::kBlocked)) {
 			if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.AlikrDance_Perk); perk && target->HasPerk(perk)) {

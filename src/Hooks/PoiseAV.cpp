@@ -35,22 +35,7 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 		health = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
 
 	health *= settings->Health.BaseMult;
-	health += ActorCache::GetSingleton()->GetOrCreateCachedWeight(a_actor) * Settings::GetSingleton()->Health.ArmorMult;
 
-	//if (auto levelledModifier = (RE::ExtraLevCreaModifier*)a_actor->extraList.GetByType(RE::ExtraDataType::kLevCreaModifier)) {
-	//	auto modifier = levelledModifier->modifier;
-	//	if (modifier.any(RE::LEV_CREA_MODIFIER::kEasy)) {
-	//		health *= 0.75;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kMedium)) {
-	//		health *= 1.00;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kHard)) {
-	//		health *= 1.25;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kVeryHard)) {
-	//		health *= 1.50;
-	//	}
-	//}
-
-	//return std::clamp(health, 0.0f, FLT_MAX);
 	return std::clamp(health, 0.0f, std::numeric_limits<float>::max());
 }
 
@@ -96,15 +81,45 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 	float poiseDamagePercent = 0.0f;
 
-	if (a_poiseDamage > 0 && a_target != a_aggressor) {
-		float damageMultiplier = settings->GetDamageMultiplier(a_aggressor, a_target);
+	// Attack checks
+	bool isAttacking = a_target->AsActorState()->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone;
+	bool isCasting = false;
+	a_target->GetGraphVariableBool("IsInCastState", isCasting);
 
-		damageMultiplier = 1.0f + (damageMultiplier - 1.0f) * settings->Damage.PoiseScaling;
+	if (!isCasting) {
+		bool castRight = false, castLeft = false, castDual = false;
+		a_target->GetGraphVariableBool("IsCastingRight", castRight);
+		a_target->GetGraphVariableBool("IsCastingLeft", castLeft);
+		a_target->GetGraphVariableBool("IsCastingDual", castDual);
+		isCasting = (castRight || castLeft || castDual);
+	}
+
+	if (isAttacking || isCasting) {
+		const auto  actionSettings = Settings::GetSingleton();
+		const float actionMultiplier = (actionSettings && actionSettings->Damage.AttackOfOppourunityMult > 0.0f) ? actionSettings->Damage.AttackOfOppourunityMult : 1.5f;
+
+		float beforeActionDamage = a_poiseDamage;
+		a_poiseDamage *= actionMultiplier;
+
+		logger::debug(
+			FMT_STRING("[Poise Multiplier - Action] Target: {} | Attacking: {} | Casting: {} | Mult: {} | Before: {} | After: {}"),
+			a_target->GetName(),
+			isAttacking,
+			isCasting,
+			actionMultiplier,
+			beforeActionDamage,
+			a_poiseDamage);
+	}
+
+	if (a_poiseDamage > 0.0f && a_target != a_aggressor) {
+		// Store base raw multiplier to avoid redundant calls
+		float rawDifficultyMult = settings->GetDamageMultiplier(a_aggressor, a_target);
+		float damageMultiplier = 1.0f + (rawDifficultyMult - 1.0f) * settings->Damage.PoiseScaling;
 
 		logger::debug(
 			FMT_STRING("Poise Scaling: Before={} DifficultyMult={} PoiseScaling={} FinalMult={}"),
 			a_poiseDamage,
-			settings->GetDamageMultiplier(a_aggressor, a_target),
+			rawDifficultyMult,
 			settings->Damage.PoiseScaling,
 			damageMultiplier);
 
@@ -116,9 +131,15 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			a_poiseDamage *= settings->Damage.ToNPCMult;
 		}
 
-		poiseDamagePercent = a_poiseDamage / avManager->GetActorValueMax(g_avName, a_target);
+		// Division-by-zero guard against NaN/Infinity crashes
+		float maxPoise = avManager->GetActorValueMax(g_avName, a_target);
+		if (maxPoise > 0.0f) {
+			poiseDamagePercent = a_poiseDamage / maxPoise;
+		} else {
+			poiseDamagePercent = 0.0f;
+		}
 
-		if (a_hitData && a_hitData->flags && a_hitData->flags.all(RE::HitData::Flag::kBlocked)) {
+		if (a_hitData) {
 			if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
 				poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
 				Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
@@ -142,25 +163,17 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			settings->Damage.SeismicImpactThreshold);
 	}
 
-	// logger::info("DACP Branch. {} attempting to damage poise. current value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));
-
 	avManager->DamageActorValue(g_avName, a_target, a_poiseDamage);
 
-	// logger::info("DACP Branch. {} poise damaged. current value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));
-
 	auto poise = avManager->GetActorValue(g_avName, a_target);
-	if (poise == 0.0f) {
-		// logger::info("DACP Branch. {} poise is depleted. attemtping stagger. Value: {} ", a_target->GetName(), avManager->GetActorValue(g_avName, a_target));
+	if (poise <= 0.0f) {
 		a_target->AddToFaction(ForceFullBodyStagger, 0);
-		// auto poiseDamagePercent = a_poiseDamage / avManager->GetActorValueMax(g_avName, a_target);
 
-		// logger::info("DACP Branch. {} Poisedamage percent is equal to Stagger Mag: {} ", a_target->GetName(), poiseDamagePercent);
-
-		// Stagger duration is relative to the power of the attacking weapon
 		logger::debug(FMT_STRING("Poise Damage Percent {}"), poiseDamagePercent);
 
 		if (!GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
-			TryStagger(a_target, poiseDamagePercent, a_aggressor);
+			float safeStaggerMag = std::clamp(poiseDamagePercent, 0.0f, 2.0f);
+			TryStagger(a_target, safeStaggerMag, a_aggressor);
 			a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
 		}
 	}
@@ -175,9 +188,6 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 		if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
 			if (!CanDamageActor(a_actor)) {
 				PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(a_actor->GetHandle(), TRUEHUD_API::BarColorType::BarColor, 0x808080);
-
-				// logger::info("Update hook active. {} is staggered. Overridding poise bar ", a_actor->GetName());
-
 			} else {
 				PoiseAVHUD::trueHUDInterface->RevertSpecialBarColor(a_actor->GetHandle(), TRUEHUD_API::BarColorType::BarColor);
 			}
@@ -185,32 +195,29 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 
 		auto                               avManager = AVManager::GetSingleton();
 		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-		if (avManager->GetActorValue(g_avName, a_actor) == 0.0f) {
-			// logger::info("Update Branch. {} poise is depleted. Value: {} ", a_actor->GetName(), avManager->GetActorValue(g_avName, a_actor));
 
+		float currentPoise = avManager->GetActorValue(g_avName, a_actor);
+
+		if (currentPoise <= 0.0f) {
 			if (a_actor->AsActorState()->actorState2.staggered) {
-				// logger::info("Update Branch. {} isStaggered. Restoring Max Poise ", a_actor->GetName());
-
 				avManager->RestoreActorValue(g_avName, a_actor, avManager->GetActorValueMax(g_avName, a_actor));
-
-				// logger::info("Update Branch. {} Current Poise: {:.2f} ", a_actor->GetName(), avManager->GetActorValue(g_avName, a_actor));
 
 				if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
 					PoiseAVHUD::trueHUDInterface->FlashActorSpecialBar(SKSE::GetPluginHandle(), a_actor->GetHandle(), true);
-					// logger::info("Update Branch. {} flashing HUD Bar due to depleted poise ", a_actor->GetName());
 				}
 				RemoveFromFaction(a_actor, ForceFullBodyStagger);
 			} else {
-				// logger::info("Update Branch. {} isnot Staggered. Attempting stagger", a_actor->GetName());
-
 				if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
 					TryStagger(a_actor, 0.5f, nullptr);
 					a_actor->SetGraphVariableBool("bPoise_IsStaggered", false);
 				}
 			}
 		} else {
-			avManager->RestoreActorValue(g_avName, a_actor, avManager->GetActorValueMax(g_avName, a_actor) * settings->Health.RegenRate * a_delta);
-			// logger::info("Update Branch. {} poise not depleted. Restoring poise : {} ", a_actor->GetName(), avManager->GetActorValueMax(g_avName, a_actor) * settings->Health.RegenRate * a_delta);
+			// Delta-time scaled regen point calculation
+			float maxPoise = avManager->GetActorValueMax(g_avName, a_actor);
+			float regenAmount = maxPoise * settings->Health.RegenRate * a_delta;
+
+			avManager->RestoreActorValue(g_avName, a_actor, regenAmount);
 		}
 	}
 }
@@ -225,7 +232,7 @@ void PoiseAV::GarbageCollection()
 		std::string sformID = el.key();
 		try {
 			if (auto form = RE::TESForm::LookupByID(static_cast<RE::FormID>(std::stoul(sformID)))) {
-				if (auto actor = RE::TESForm::LookupByID(static_cast<RE::FormID>(std::stoul(sformID)))->As<RE::Actor>()) {
+				if (auto actor = form->As<RE::Actor>()) {
 					if (actor->GetActorRuntimeData().currentProcess && actor->GetActorRuntimeData().currentProcess->InHighProcess() && actor->Is3DLoaded())
 						continue;
 				}

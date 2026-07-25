@@ -115,20 +115,26 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
 
 	stagger *= baseMult;
-	if (hitData->totalDamage && hitData->physicalDamage) {
+
+	// Explicit > 0.0f checks prevent division-by-zero (NaN/Infinity crash).
+	// Uses raw physical damage ratio to prevent double-dipping armor mitigation.
+	if (hitData->totalDamage > 0.0f && hitData->physicalDamage > 0.0f) {
 		float damageRatio = hitData->totalDamage / hitData->physicalDamage;
 		damageRatio = std::clamp(damageRatio, 0.0f, 3.0f);
 
 		stagger *= damageRatio;
 	}
 
-	float totalArmor = target->GetActorRuntimeData().armorRating;
-	float armorReduction = (totalArmor * settings->Health.ArmorMult +
-							   target->GetActorRuntimeData().armorBaseFactorSum) /
-	                       100.0f;
+	// --- Pure Hyperbolic Armor Reduction (ARR) ---
+	float totalArmor = (std::max)(0.0f, static_cast<float>(target->GetActorRuntimeData().armorRating));
+
+	// 1. Calculate r1 (1:1 mirror with Armor Rating Rescaled Health math)
+	float r1 = (totalArmor / 100.0f) * settings->Health.ArmorMult;
+
+	// 2. Hyperbolic reduction percentage (r2)
+	float armorReduction = r1 / (1.0f + r1);
 
 	float armorMult = 1.0f - armorReduction;
-
 	if (armorMult < settings->Health.ArmorMultMin) {
 		armorMult = settings->Health.ArmorMultMin;
 	}

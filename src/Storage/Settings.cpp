@@ -59,84 +59,108 @@ void Settings::LoadINI(const wchar_t* a_path)
 {
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	ini.LoadFile(a_path);
-	const auto get_value = [&]<class T>(T& a_value, const char* a_section, const char* a_key, const char* a_comment) {
-		if constexpr (std::is_same_v<bool, T>) {
-			a_value = ini.GetBoolValue(a_section, a_key, a_value);
-			ini.SetBoolValue(a_section, a_key, a_value, a_comment);
-		} else {
-			a_value = static_cast<float>(ini.GetDoubleValue(a_section, a_key, a_value));
-			ini.SetDoubleValue(a_section, a_key, a_value, a_comment);
-		}
-	};
 
-	Modes.StaggerMode = ini.GetLongValue("Modes", "StaggerMode", Modes.StaggerMode);
+	if (ini.LoadFile(a_path) < 0) {
+		logger::error(FMT_STRING("Failed to load INI file at path: {}"), SKSE::stl::utf16_to_utf8(a_path).value_or(""));
+		return;
+	}
 
-	Health.BaseMult = static_cast<float>(ini.GetDoubleValue("Health", "BaseMult", Health.BaseMult));
-	Health.ArmorMult = static_cast<float>(ini.GetDoubleValue("Health", "ArmorMult", Health.ArmorMult));
-	Health.ArmorMultMin = static_cast<float>(ini.GetDoubleValue("Health", "ArmorMultMin", Health.ArmorMultMin));
-	Health.RegenRate = static_cast<float>(ini.GetDoubleValue("Health", "RegenRate", Health.RegenRate));
+	// Modes
+	Modes.StaggerMode = static_cast<int>(ini.GetLongValue("Modes", "StaggerMode", Modes.StaggerMode));
 
-	Damage.BashMult = static_cast<float>(ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult));
-	Damage.BowMult = static_cast<float>(ini.GetDoubleValue("Damage", "BowMult", Damage.BowMult));
-	Damage.CreatureMult = static_cast<float>(ini.GetDoubleValue("Damage", "CreatureMult", Damage.CreatureMult));
-	Damage.MeleeMult = static_cast<float>(ini.GetDoubleValue("Damage", "MeleeMult", Damage.MeleeMult));
+	// Health
+	Health.BaseMult = static_cast<float>(
+		ini.GetValue("Health", "BaseMult", nullptr) ? ini.GetDoubleValue("Health", "BaseMult", Health.BaseMult) : ini.GetDoubleValue("Health Settings", "Base Mult", Health.BaseMult));
 
-	Damage.UnarmedMult = static_cast<float>(ini.GetDoubleValue("Damage", "UnarmedMult", Damage.UnarmedMult));
+	Health.ArmorMult = static_cast<float>(
+		ini.GetValue("Health", "ArmorMult", nullptr) ? ini.GetDoubleValue("Health", "ArmorMult", Health.ArmorMult) : ini.GetDoubleValue("Health Settings", "Armor Mult", Health.ArmorMult));
 
-	Damage.ToPCMult = static_cast<float>(ini.GetDoubleValue("Damage", "ToPCMult", Damage.ToPCMult));
-	Damage.ToNPCMult = static_cast<float>(ini.GetDoubleValue("Damage", "ToNPCMult", Damage.ToNPCMult));
+	Health.ArmorMultMin = static_cast<float>(
+		ini.GetValue("Health", "ArmorMultMin", nullptr) ? ini.GetDoubleValue("Health", "ArmorMultMin", Health.ArmorMultMin) : ini.GetDoubleValue("Health Settings", "Armor Mult Min", Health.ArmorMultMin));
 
-	Damage.PoiseScaling = static_cast<float>(ini.GetDoubleValue("Damage", "PoiseScaling", Damage.PoiseScaling));
+	Health.RegenRate = static_cast<float>(
+		ini.GetValue("Health", "RegenRate", nullptr) ? ini.GetDoubleValue("Health", "RegenRate", Health.RegenRate) : ini.GetDoubleValue("Health Settings", "Regen Rate", Health.RegenRate));
 
-	Damage.WeightContribution = static_cast<float>(ini.GetDoubleValue("Damage", "WeightContribution", Damage.WeightContribution));
-	Damage.GauntletWeightContribution = static_cast<float>(ini.GetDoubleValue("Damage", "GauntletWeightContribution", Damage.GauntletWeightContribution));
-	Damage.UnarmedSkillContribution = static_cast<float>(ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution));
+	// Damage
+	Damage.BashMult = static_cast<float>(
+		ini.GetValue("Damage", "BashMult", nullptr) ? ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult) : ini.GetDoubleValue("Damage Settings", "Bash Mult", Damage.BashMult));
 
-	TrueHUD.SpecialBar = ini.GetBoolValue("TrueHUD", "SpecialBar", TrueHUD.SpecialBar) && (!GetModuleHandleA("valhallaCombat.dll") || ini.GetBoolValue("TrueHUD", "IgnoreValhallaCombat", false));
+	Damage.BowMult = static_cast<float>(
+		ini.GetValue("Damage", "BowMult", nullptr) ? ini.GetDoubleValue("Damage", "BowMult", Damage.BowMult) : ini.GetDoubleValue("Damage Settings", "Bow Mult", Damage.BowMult));
 
-	get_value(Health.BaseMult, "Health Settings", "Base Mult", ";Base Health Multiplier");
-	get_value(Health.ArmorMult, "Health Settings", "Armor Mult", ";Armor Multiplier");
-	get_value(Health.RegenRate, "Health Settings", "Regen Rate", ";Poise regeneration rate");
+	Damage.CreatureMult = static_cast<float>(
+		ini.GetValue("Damage", "CreatureMult", nullptr) ? ini.GetDoubleValue("Damage", "CreatureMult", Damage.CreatureMult) : ini.GetDoubleValue("Damage Settings", "Creature Mult", Damage.CreatureMult));
 
-	get_value(Damage.BashMult, "Damage Settings", "Bash Mult", ";Multiplier for Bash Attacks");
-	get_value(Damage.BowMult, "Damage Settings", "Bow Mult", ";Poise Damage Multiplier for Bow attacks");
-	get_value(Damage.CreatureMult, "Damage Settings", "Creature Mult", ";Poise damage from creatures");
-	get_value(Damage.MeleeMult, "Damage Settings", "Melee Mult", ";Poise damage multiplier from melee attacks");
+	Damage.MeleeMult = static_cast<float>(
+		ini.GetValue("Damage", "MeleeMult", nullptr) ? ini.GetDoubleValue("Damage", "MeleeMult", Damage.MeleeMult) : ini.GetDoubleValue("Damage Settings", "Melee Mult", Damage.MeleeMult));
 
-	get_value(Damage.ToPCMult, "General Damage Settings", "Player Multiplier", ";Poise damage multiplier for the Player");
-	get_value(Damage.ToNPCMult, "General Damage Settings", "NPC Multiplier", ";Poise damage multiplier to NPCs");
-	get_value(Damage.WeightContribution, "General Damage Settings", "Weight Contribution", ";How much influence weight has to your poise damage");
+	Damage.UnarmedMult = static_cast<float>(
+		ini.GetValue("Damage", "UnarmedMult", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedMult", Damage.UnarmedMult) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Damage Mult", Damage.UnarmedMult));
 
-	get_value(Damage.PoiseScaling, "General Damage Settings", "Poise Scaling", ";How much difficulty damage affects poise");
+	Damage.ToPCMult = static_cast<float>(
+		ini.GetValue("Damage", "ToPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToPCMult", Damage.ToPCMult) : ini.GetDoubleValue("General Damage Settings", "Player Multiplier", Damage.ToPCMult));
 
-	get_value(Damage.UnarmedMult, "Unarmed Damage Settings", "Unarmed Damage Mult", ";Poise damage from unarmed attacks");
-	get_value(Damage.GauntletWeightContribution, "Unarmed Damage Settings", "Gauntlet Weight Contribution", ";How much influence the gaunlet weight has to poise damage");
-	get_value(Damage.UnarmedSkillContribution, "Unarmed Damage Settings", "Unarmed Skill Contribution", ";How much influence the Unarmed skill has to poise damage");
+	Damage.ToNPCMult = static_cast<float>(
+		ini.GetValue("Damage", "ToNPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToNPCMult", Damage.ToNPCMult) : ini.GetDoubleValue("General Damage Settings", "NPC Multiplier", Damage.ToNPCMult));
 
-	get_value(Damage.NormalImpactThreshold,
-		"Impact Thresholds",
-		"Normal Impact",
-		";Minimum poise damage percentage for normal impact");
+	Damage.PoiseScaling = static_cast<float>(
+		ini.GetValue("Damage", "PoiseScaling", nullptr) ? ini.GetDoubleValue("Damage", "PoiseScaling", Damage.PoiseScaling) : ini.GetDoubleValue("General Damage Settings", "Poise Scaling", Damage.PoiseScaling));
 
-	get_value(Damage.PowerfulImpactThreshold,
-		"Impact Thresholds",
-		"Powerful Impact",
-		";Minimum poise damage percentage for powerful impact");
+	Damage.WeightContribution = static_cast<float>(
+		ini.GetValue("Damage", "WeightContribution", nullptr) ? ini.GetDoubleValue("Damage", "WeightContribution", Damage.WeightContribution) : ini.GetDoubleValue("General Damage Settings", "Weight Contribution", Damage.WeightContribution));
 
-	get_value(Damage.SeismicImpactThreshold,
-		"Impact Thresholds",
-		"Seismic Impact",
-		";Minimum poise damage percentage for seismic impact");
+	Damage.GauntletWeightContribution = static_cast<float>(
+		ini.GetValue("Damage", "GauntletWeightContribution", nullptr) ? ini.GetDoubleValue("Damage", "GauntletWeightContribution", Damage.GauntletWeightContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Gauntlet Weight Contribution", Damage.GauntletWeightContribution));
 
-	get_value(TrueHUD.SpecialBar, "True HUD integration", "TrueHUD special bar usage", ";true or false");
-	get_value(TrueHUD.SpecialBar, "True HUD integration", "Ignore Valhalla Combat", ";true or false");
+	Damage.UnarmedSkillContribution = static_cast<float>(
+		ini.GetValue("Damage", "UnarmedSkillContribution", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Skill Contribution", Damage.UnarmedSkillContribution));
+
+	Damage.AttackOfOppourunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOppourtunityMult", 1.5));
+
+	// Impact Thresholds
+	Damage.NormalImpactThreshold = static_cast<float>(
+		ini.GetValue("Impact Thresholds", "Normal Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Normal Impact", Damage.NormalImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "NormalImpact", Damage.NormalImpactThreshold));
+
+	Damage.PowerfulImpactThreshold = static_cast<float>(
+		ini.GetValue("Impact Thresholds", "Powerful Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Powerful Impact", Damage.PowerfulImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "PowerfulImpact", Damage.PowerfulImpactThreshold));
+
+	Damage.SeismicImpactThreshold = static_cast<float>(
+		ini.GetValue("Impact Thresholds", "Seismic Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Seismic Impact", Damage.SeismicImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "SeismicImpact", Damage.SeismicImpactThreshold));
+
+	// TrueHUD Integration
+	TrueHUD.SpecialBar = ini.GetValue("TrueHUD", "SpecialBar", nullptr) ? ini.GetBoolValue("TrueHUD", "SpecialBar", TrueHUD.SpecialBar) : ini.GetBoolValue("True HUD integration", "TrueHUD special bar usage", TrueHUD.SpecialBar);
+
+	bool ignoreValhalla = ini.GetValue("TrueHUD", "IgnoreValhallaCombat", nullptr) ? ini.GetBoolValue("TrueHUD", "IgnoreValhallaCombat", false) : ini.GetBoolValue("True HUD integration", "Ignore Valhalla Combat", false);
+
+	if (GetModuleHandleA("valhallaCombat.dll") && !ignoreValhalla) {
+		TrueHUD.SpecialBar = false;
+	}
+
+	logger::info(FMT_STRING("INI Loaded Successfully:"));
+	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
+	logger::info(FMT_STRING("  [Health] BaseMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
+		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
+	logger::info(FMT_STRING("  [Damage] BashMult={} BowMult={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
+		Damage.BashMult, Damage.BowMult, Damage.CreatureMult, Damage.MeleeMult, Damage.UnarmedMult);
+	logger::info(FMT_STRING("  [Damage General] ToPCMult={} ToNPCMult={} PoiseScaling={} WeightContrib={} GauntletWeight={} UnarmedSkill={}"),
+		Damage.ToPCMult, Damage.ToNPCMult, Damage.PoiseScaling, Damage.WeightContribution, Damage.GauntletWeightContribution, Damage.UnarmedSkillContribution);
+	logger::info(FMT_STRING("  [Impact Thresholds] Normal={} Powerful={} Seismic={}"),
+		Damage.NormalImpactThreshold, Damage.PowerfulImpactThreshold, Damage.SeismicImpactThreshold);
+	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),
+		TrueHUD.SpecialBar, ignoreValhalla);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)
 {
 	std::ifstream i(a_path);
-	i >> JSONSettings;
+	if (i.is_open()) {
+		try {
+			i >> JSONSettings;
+		} catch (const std::exception& e) {
+			logger::error(FMT_STRING("Failed to parse JSON file at {}: {}"),
+				SKSE::stl::utf16_to_utf8(a_path).value_or(""), e.what());
+		}
+	}
 }
 
 void Settings::LoadSettings()
@@ -144,12 +168,6 @@ void Settings::LoadSettings()
 	LoadGameSettings();
 	LoadINI(L"Data/SKSE/Plugins/ChocolatePoise.ini");
 	LoadJSON(L"Data/SKSE/Plugins/ChocolatePoise.json");
-
-	logger::debug(
-		FMT_STRING("Loaded Impact Thresholds: Normal={} Powerful={} Seismic={}"),
-		Damage.NormalImpactThreshold,
-		Damage.PowerfulImpactThreshold,
-		Damage.SeismicImpactThreshold);
 
 	if (PoiseAVHUD::trueHUDInterface) {
 		if (PoiseAVHUD::trueHUDInterface->RequestSpecialResourceBarsControl(SKSE::GetPluginHandle()) == TRUEHUD_API::APIResult::OK) {

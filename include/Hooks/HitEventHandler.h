@@ -14,6 +14,21 @@ public:
 
 	static void InstallHooks()
 	{
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (dataHandler) {
+			auto minWeap = RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("IronDagger");
+			auto maxWeap = RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("DaedricWarhammer");
+
+			auto instance = GetSingleton();
+			instance->_minWeapon = minWeap;
+			instance->_maxWeapon = maxWeap;
+
+			if (!minWeap || !maxWeap) {
+				logger::error("Failed to resolve baseline weapons (IronDagger or DaedricWarhammer)!");
+			} else {
+				logger::info("Baseline weapons successfully cached for scaling curve.");
+			}
+		}
 		Hooks::Install();
 	}
 
@@ -48,6 +63,8 @@ protected:
 	};
 
 private:
+	RE::TESObjectWEAP* _minWeapon{ nullptr };
+	RE::TESObjectWEAP* _maxWeapon{ nullptr };
 	// static void PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData);
 	constexpr HitEventHandler() noexcept = default;
 	HitEventHandler(const HitEventHandler&) = delete;

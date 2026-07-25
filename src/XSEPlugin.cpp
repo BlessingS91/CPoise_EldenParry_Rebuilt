@@ -5,7 +5,6 @@
 #include "Hooks.h"
 #include "Hooks/Hooks.h"
 #include "Hooks/PoiseAV.h"
-#include "Settings.h"
 #include "Storage/ActorCache.h"
 #include "Storage/Serialization.h"
 #include "Storage/Settings.h"
@@ -72,7 +71,7 @@ void onSKSEInit()
 	avManager->RegisterActorValue(PoiseAV::g_avName, poiseAV);
 
 	auto messaging = SKSE::GetMessagingInterface();
-	messaging->RegisterListener("SKSE", MessageHandler);
+	messaging->RegisterListener("SKSE", MessageHandler);  // Keep only one listener registration
 
 	auto serialization = SKSE::GetSerializationInterface();
 	serialization->SetUniqueID(Serialization::kUniqueID);
@@ -85,7 +84,9 @@ void onSKSEInit()
 	ActorCache::RegisterEvents();
 	EldenSettings::readSettings();
 	EldenHooks::install();
-	Milf::GetSingleton()->Load();
+
+	// Verify if Milf::GetSingleton()->Load() depends on game data
+	// that isn't loaded yet. If so, move it to the kDataLoaded event instead.
 }
 
 void InitializeLog()
@@ -118,10 +119,13 @@ void InitializeLog()
 
 EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
 {
-#ifndef NDEBUG
-	while (!IsDebuggerPresent()) {
-	};
-#endif
+	// Remove or comment out this block:
+	/*
+    #ifndef NDEBUG
+        while (!IsDebuggerPresent()) {
+        };
+    #endif
+    */
 
 	InitializeLog();
 

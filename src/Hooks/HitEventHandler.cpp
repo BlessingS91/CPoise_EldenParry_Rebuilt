@@ -3,7 +3,6 @@
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
 
-
 float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 {
 	auto settings = Settings::GetSingleton();
@@ -54,8 +53,8 @@ float HitEventHandler::GetMiscDamage()
 	return 5.0f;
 }
 
-float HitEventHandler::ModActorBashMult(RE::Actor* aggressor) {
-	
+float HitEventHandler::ModActorBashMult(RE::Actor* aggressor)
+{
 	float a_value = 0.0f;
 
 	if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.SkullRattler_Perk); perk) {
@@ -91,11 +90,11 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 		auto leftHand = aggressor->GetEquippedObject(true);
 		auto rightHand = aggressor->GetEquippedObject(false);
 		if (leftHand && leftHand->formType == RE::FormType::Armor) {
-			stagger = GetShieldDamage(leftHand->As<RE::TESObjectARMO>()) * (settings->Damage.BashMult += (ModActorBashMult(aggressor)));
+			stagger = GetShieldDamage(leftHand->As<RE::TESObjectARMO>()) * (settings->Damage.BashMult + (ModActorBashMult(aggressor)));
 		} else if (rightHand && rightHand->formType == RE::FormType::Weapon) {
-			stagger = GetWeaponDamage(rightHand->As<RE::TESObjectWEAP>()) * (settings->Damage.BashMult += (ModActorBashMult(aggressor)));
+			stagger = GetWeaponDamage(rightHand->As<RE::TESObjectWEAP>()) * (settings->Damage.BashMult + (ModActorBashMult(aggressor)));
 		} else {
-			stagger = GetMiscDamage() * (settings->Damage.BashMult += (ModActorBashMult(aggressor)));
+			stagger = GetMiscDamage() * (settings->Damage.BashMult + (ModActorBashMult(aggressor)));
 		}
 	} else {
 		logger::debug("Unknown attack");
@@ -116,9 +115,18 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 
 	stagger *= baseMult;
 	if (hitData->totalDamage && hitData->physicalDamage)
-	stagger *= hitData->totalDamage / hitData->physicalDamage;
-	stagger = stagger * min(1 - (target->GetActorRuntimeData().armorRating * 0.12f + target->GetActorRuntimeData().armorBaseFactorSum) / 100.0f, 0.8f);
+		stagger *= hitData->totalDamage / hitData->physicalDamage;
+	float armorMult = 1.0f -
+	                  (target->GetActorRuntimeData().armorRating * 0.12f +
+						  target->GetActorRuntimeData().armorBaseFactorSum) /
+	                      100.0f;
 
+	if (armorMult < 0.25f)
+		armorMult = 0.25f;
+	else if (armorMult > 0.8f)
+		armorMult = 0.8f;
+
+	stagger *= armorMult;
 	if (stagger > 0.00) {
 		if (hitData->flags.all(RE::HitData::Flag::kBlocked)) {
 			if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.AlikrDance_Perk); perk && target->HasPerk(perk)) {

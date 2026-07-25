@@ -1,7 +1,6 @@
 #pragma once
-#include "Hooks/PoiseAV.h"
 #include "ActorValues/AVManager.h"
-
+#include "Hooks/PoiseAV.h"
 
 class Utils
 {
@@ -89,11 +88,11 @@ private:
 			return false;
 		}
 
-		float targetSpeedSquared = a_targetVelocity.SqrLength();
-		float targetSpeed = std::sqrtf(targetSpeedSquared);
+		float        targetSpeedSquared = a_targetVelocity.SqrLength();
+		float        targetSpeed = std::sqrtf(targetSpeedSquared);
 		RE::NiPoint3 targetToProjectile = a_projectilePos - a_targetPosition;
-		float distanceSquared = targetToProjectile.SqrLength();
-		float distance = std::sqrtf(distanceSquared);
+		float        distanceSquared = targetToProjectile.SqrLength();
+		float        distance = std::sqrtf(distanceSquared);
 		RE::NiPoint3 direction = targetToProjectile;
 		direction.Unitize();
 		RE::NiPoint3 targetVelocityDirection = a_targetVelocity;
@@ -101,7 +100,7 @@ private:
 
 		float cosTheta = (targetSpeedSquared > 0) ? direction.Dot(targetVelocityDirection) : 1.0f;
 
-		bool bValidSolutionFound = true;
+		bool  bValidSolutionFound = true;
 		float t;
 
 		if (ApproximatelyEqual(projectileSpeedSquared, targetSpeedSquared)) {
@@ -160,14 +159,11 @@ private:
 		return bValidSolutionFound;
 	}
 
-
-
 public:
-
 	static void triggerStagger(RE::Actor* a_defender, RE::Actor* a_aggressor)
 	{
 		const auto caster = a_defender->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-		float a_reprisal = (EldenParry::GetSingleton()->AttackerBeatsParry(a_aggressor, a_defender));
+		float      a_reprisal = (EldenParry::GetSingleton()->AttackerBeatsParry(a_aggressor, a_defender));
 
 		auto bHasEldenParryPerk2 = false;
 		auto bHasEldenParryPerk1 = false;
@@ -207,7 +203,7 @@ public:
 				caster->CastSpellImmediate(eldenArmorSpell, true, a_defender, 1, false, 45, a_defender);
 			}
 		}
-		
+
 		auto bDefenderHasShield = isEquippedShield(a_defender);
 		auto defender_weaponType = UGetAttackWeapon(a_defender);
 
@@ -1171,7 +1167,6 @@ public:
 				}
 			}
 		}
-		
 	};
 
 	static bool isEquippedShield(RE::Actor* a_actor)
@@ -1191,16 +1186,12 @@ public:
 		RE::TESObjectWEAP* weapon = nullptr;
 
 		if (auto aiProcess = a_actor->GetActorRuntimeData().currentProcess; aiProcess) {
-
 			if (aiProcess->high && aiProcess->high->attackData && aiProcess->high->attackData.get()) {
-
 				auto equipped = aiProcess->high->attackData.get()->IsLeftAttack() ? aiProcess->GetEquippedLeftHand() : aiProcess->GetEquippedRightHand();
 
-				if(equipped && equipped->Is(RE::FormType::Weapon)){
-					
-					weapon =  equipped->As<RE::TESObjectWEAP>();
+				if (equipped && equipped->Is(RE::FormType::Weapon)) {
+					weapon = equipped->As<RE::TESObjectWEAP>();
 				}
-				
 			}
 		}
 		return weapon;
@@ -1215,16 +1206,29 @@ public:
 		a_projectile_collidable->broadPhaseHandle.collisionFilterInfo |= (a_collisionFilterInfo << 16);
 	}
 
-		/*Play sound with formid at a certain actor's position.
+	/*Play sound with formid at a certain actor's position.
 	@param a: actor on which to play sonud.
 	@param formid: formid of the sound descriptor.*/
 	static void playSound(RE::Actor* a, RE::BGSSoundDescriptorForm* a_descriptor)
 	{
+		if (!a) {
+			logger::error("playSound failed: actor is null");
+			return;
+		}
+
+		if (!a_descriptor) {
+			logger::error("playSound failed: sound descriptor is null for actor {}", a->GetName());
+			return;
+		}
+
+		logger::debug("Playing sound formID {:X} on actor {}",
+			a_descriptor->GetFormID(),
+			a->GetName());
+
 		RE::BSSoundHandle handle;
 		handle.soundID = static_cast<uint32_t>(-1);
 		handle.assumeSuccess = false;
 		*(uint32_t*)&handle.state = 0;
-
 
 		soundHelper_a(RE::BSAudioManager::GetSingleton(), &handle, a_descriptor->GetFormID(), 16);
 		if (set_sound_position(&handle, a->data.location.x, a->data.location.y, a->data.location.z)) {
@@ -1298,7 +1302,7 @@ public:
 				projectileGravity = bgsProjectile->data.gravity;
 				if (auto bhkWorld = a_projectile->parentCell->GetbhkWorld()) {
 					if (auto hkpWorld = bhkWorld->GetWorld1()) {
-						auto vec4 = hkpWorld->gravity;
+						auto  vec4 = hkpWorld->gravity;
 						float quad[4];
 						_mm_store_ps(quad, vec4.quad);
 						float gravity = -quad[2] * RE::bhkWorld::GetWorldScaleInverse();
@@ -1330,7 +1334,7 @@ public:
 
 	static RE::BSTimer* BSTimer_GetSingleton()
 	{
-		REL::Relocation<RE::BSTimer**> singleton{ REL::RelocationID(523657, 410196)};
+		REL::Relocation<RE::BSTimer**> singleton{ REL::RelocationID(523657, 410196) };
 		return *singleton;
 	}
 
@@ -1358,12 +1362,13 @@ public:
 	}
 };
 
-
 class blockSpark
 {
 	friend class EldenParry;
+
 private:
-	static auto getBipedIndex(RE::TESForm* parryEquipment, bool rightHand) {
+	static auto getBipedIndex(RE::TESForm* parryEquipment, bool rightHand)
+	{
 		if (!parryEquipment)
 			return RE::BIPED_OBJECT::kNone;
 
@@ -1402,7 +1407,7 @@ public:
 			return;
 		}
 		RE::BIPED_OBJECT BipeObjIndex;
-		auto defenderLeftEquipped = a_actor->GetEquippedObject(true);
+		auto             defenderLeftEquipped = a_actor->GetEquippedObject(true);
 
 		if (defenderLeftEquipped && (defenderLeftEquipped->IsWeapon() || defenderLeftEquipped->IsArmor())) {
 			BipeObjIndex = getBipedIndex(defenderLeftEquipped, false);
@@ -1425,7 +1430,7 @@ public:
 			} else {
 				modelName = "EldenParry\\impactShieldRoot.nif";
 			}
-			
+
 		} else {
 			if (EldenSettings::facts::isValhallaCombatAPIObtained) {
 				modelName = "ValhallaCombat\\impactWeaponRoot.nif";
@@ -1441,7 +1446,8 @@ public:
 class inlineUtils
 {
 public:
-	static bool isPowerAttacking(RE::Actor* a_actor) {
+	static bool isPowerAttacking(RE::Actor* a_actor)
+	{
 		if (a_actor->GetActorRuntimeData().currentProcess && a_actor->GetActorRuntimeData().currentProcess->high) {
 			auto atkData = a_actor->GetActorRuntimeData().currentProcess->high->attackData.get();
 			if (atkData) {
@@ -1451,7 +1457,6 @@ public:
 		return false;
 	}
 
-	
 	static void restoreAv(RE::Actor* a_actor, RE::ActorValue a_actorValue, float a_val)
 	{
 		if (a_val == 0) {

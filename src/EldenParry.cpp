@@ -31,10 +31,13 @@ void EldenParry::init()
 	}
 	//read parry sound
 	auto data = RE::TESDataHandler::GetSingleton();
-	_parrySound_shd = data->LookupForm<RE::BGSSoundDescriptorForm>(0xD62, "EldenParry.esp");
-	_parrySound_wpn = data->LookupForm<RE::BGSSoundDescriptorForm>(0xD63, "EldenParry.esp");
+	_parrySound_shd = data->LookupForm<RE::BGSSoundDescriptorForm>(0x80E, "Chocolate Poise - Reforged.esp");
+	_parrySound_wpn = data->LookupForm<RE::BGSSoundDescriptorForm>(0x80F, "Chocolate Poise - Reforged.esp");
+	logger::info("Parry sounds loaded: SHD={} WPN={}",
+		fmt::ptr(_parrySound_shd),
+		fmt::ptr(_parrySound_wpn));
 	if (!_parrySound_shd || !_parrySound_wpn) {
-		logger::error("Parry sound not found in EldenParry.esp");
+		logger::error("Parry sound not found in Chocolate Poise - Reforged.esp");
 	}
 
 	//read fcombatHitConeAngle
@@ -205,9 +208,13 @@ void EldenParry::playParryEffects(RE::Actor* a_parrier)
 {
 	if (EldenSettings::bEnableParrySoundEffect) {
 		if (Utils::isEquippedShield(a_parrier)) {
-			Utils::playSound(a_parrier, _parrySound_shd);
+			if (_parrySound_shd) {
+				Utils::playSound(a_parrier, _parrySound_shd);
+			}
 		} else {
-			Utils::playSound(a_parrier, _parrySound_wpn);
+			if (_parrySound_wpn) {
+				Utils::playSound(a_parrier, _parrySound_wpn);
+			}
 		}
 	}
 	if (EldenSettings::bEnableParrySparkEffect) {
@@ -253,7 +260,7 @@ void EldenParry::negateParryCost(RE::Actor* a_actor)
 
 void EldenParry::playGuardBashEffects(RE::Actor* a_actor)
 {
-	if (EldenSettings::bEnableParrySoundEffect) {
+	if (EldenSettings::bEnableParrySoundEffect && _parrySound_shd) {
 		Utils::playSound(a_actor, _parrySound_shd);
 	}
 	if (EldenSettings::bEnableParrySparkEffect) {
@@ -325,8 +332,8 @@ float EldenParry::GetScore(RE::Actor* actor, const Milf::Scores& scoreSettings)
 {
 	float score = 0.0f;
 
-	const auto race = actor->GetRace();
-	const auto raceFormID = race->formID;
+	auto race = actor->GetRace();
+	auto raceFormID = race ? race->formID : 0;
 
 	auto weaponAI = actor->GetActorRuntimeData().currentProcess;
 

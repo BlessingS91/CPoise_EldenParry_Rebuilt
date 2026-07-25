@@ -1,4 +1,5 @@
 #include "Hooks/HitEventHandler.h"
+#include <algorithm>
 
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
@@ -59,7 +60,7 @@ float HitEventHandler::ModActorBashMult(RE::Actor* aggressor)
 
 	if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.SkullRattler_Perk); perk) {
 		if (aggressor->HasPerk(perk)) {
-			a_value = 0.001f;
+			a_value = 0.25f;
 		}
 	}
 
@@ -114,17 +115,19 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
 
 	stagger *= baseMult;
-	if (hitData->totalDamage && hitData->physicalDamage)
-		stagger *= hitData->totalDamage / hitData->physicalDamage;
+	if (hitData->totalDamage && hitData->physicalDamage) {
+		float damageRatio = hitData->totalDamage / hitData->physicalDamage;
+		damageRatio = std::clamp(damageRatio, 0.0f, 3.0f);
+
+		stagger *= damageRatio;
+	}
 	float armorMult = 1.0f -
 	                  (target->GetActorRuntimeData().armorRating * 0.12f +
 						  target->GetActorRuntimeData().armorBaseFactorSum) /
 	                      100.0f;
 
-	if (armorMult < 0.25f)
-		armorMult = 0.25f;
-	else if (armorMult > 0.8f)
-		armorMult = 0.8f;
+	if (armorMult < settings->Health.ArmorMultMin)
+		armorMult = settings->Health.ArmorMultMin;
 
 	stagger *= armorMult;
 	if (stagger > 0.00) {

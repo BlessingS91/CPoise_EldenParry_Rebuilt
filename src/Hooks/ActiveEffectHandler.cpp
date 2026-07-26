@@ -25,15 +25,19 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 	auto settings = Settings::GetSingleton();
 
 	if (a_target != a_aggressor && (a_aggressor || a_magnitudeDelta < 0) && poiseAV->CanDamageActor(a_target) && a_magnitudeDelta != 0) {
-		float poiseDamage = CalculateEffectMultiplier(a_actorValue, a_magnitudeDelta > 0) * a_magnitudeDelta;
+		float effectMultiplier = CalculateEffectMultiplier(a_actorValue, a_magnitudeDelta > 0);
+		float poiseDamage = effectMultiplier * a_magnitudeDelta;
+		float rawDifficultyMult = settings->GetDamageMultiplier(a_aggressor, a_target);
+		float difficultyMult = 1.0f + (rawDifficultyMult - 1.0f) * settings->Damage.PoiseScaling;
+		float baseMult = 1.0f;
 
 		if (a_aggressor) {
-			float baseMult = 1.0f;
 			PoiseAV::ApplyPerkEntryPoint(34, a_aggressor->As<RE::Character>(), a_target->As<RE::Character>(), &baseMult);
 			PoiseAV::ApplyPerkEntryPoint(33, a_target->As<RE::Character>(), a_aggressor->As<RE::Character>(), &baseMult);
 			poiseDamage *= baseMult;
 			if (poiseDamage > 0) {
-				poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
+				poiseDamage *= difficultyMult;
+
 				if (a_target != a_aggressor) {
 					if (a_target->IsPlayerRef())
 						poiseDamage *= settings->Damage.ToPCMult;
@@ -43,49 +47,19 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 			}
 		}
 
+		logger::debug(
+			"[Poise Damage] Target={} Aggressor={} AV={} RawDamage={} EffectMultiplier={} BaseMult={} RawDifficultyMult={} DifficultyMult={} PoiseScaling={} FinalPoiseDamage={}",
+			a_target ? a_target->GetName() : "NULL",
+			a_aggressor ? a_aggressor->GetName() : "NULL",
+			std::string(magic_enum::enum_name(a_actorValue)),
+			a_magnitudeDelta,
+			effectMultiplier,
+			baseMult,
+			rawDifficultyMult,
+			difficultyMult,
+			settings->Damage.PoiseScaling,
+			poiseDamage);
+
 		poiseAV->DamageAndCheckPoise(a_target, a_aggressor, poiseDamage);
 	}
-}
-
-//Resistance Calcs
-float ActiveEffectHandler::GetResistanceMultiplier(RE::Actor* a_target, RE::ActorValue a_actorValue)
-{
-	if (!a_target) {
-		return 1.0f;
-	}
-
-	auto actorValues = a_target->AsActorValueOwner();
-
-	float resistance = 0.0f;
-
-	switch (a_actorValue) {
-	case RE::ActorValue::kResistFire:
-		resistance = actorValues->GetActorValue(RE::ActorValue::kResistFire);
-		break;
-
-	case RE::ActorValue::kResistFrost:
-		resistance = actorValues->GetActorValue(RE::ActorValue::kResistFrost);
-		break;
-
-	case RE::ActorValue::kResistShock:
-		resistance = actorValues->GetActorValue(RE::ActorValue::kResistShock);
-		break;
-
-	case RE::ActorValue::kPoisonResist:
-		resistance = actorValues->GetActorValue(RE::ActorValue::kPoisonResist);
-		break;
-
-	case RE::ActorValue::kResistMagic:
-		resistance = actorValues->GetActorValue(RE::ActorValue::kResistMagic);
-		break;
-
-	default:
-		// Generic magic effects use Magic Resistance
-		resistance = actorValues->GetActorValue(RE::ActorValue::kResistMagic);
-		break;
-	}
-
-	resistance = std::clamp(resistance, 0.0f, 100.0f);
-
-	return 1.0f - (resistance / 100.0f);
 }

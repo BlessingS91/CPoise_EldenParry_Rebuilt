@@ -5,12 +5,19 @@ def calculate_weapon_poise(
     min_damage=4.0,
     max_damage=27.0,
     max_multiplier=7.0,
-    weight_contrib=0.005,
-    min_poise=15.0,
-    max_poise=70.0,
+    weight_contrib=0.010,
+    damage_curve=2.5,
+    min_poise=25.0,
+    max_poise=75.0,
 ):
     """
-    Matches current C++ GetWeaponDamage()
+    Matches current C++ GetWeaponDamage() scaling.
+
+    Changes:
+    - Armor Rescaled style curve strength (2.5)
+    - Higher minimum poise floor (25)
+    - Higher maximum poise ceiling (75)
+    - Weight contributes meaningful stagger authority (0.010)
     """
 
     max_damage *= max_multiplier
@@ -24,16 +31,17 @@ def calculate_weapon_poise(
 
     normalized_damage = max(0.0, min(1.0, normalized_damage))
 
-    # ARR style curve
-    r1 = normalized_damage * 5.0
+    # Armor Rating Rescaled style diminishing return curve
+    r1 = normalized_damage * damage_curve
     r2 = r1 / (1.0 + r1)
 
+    # Weapon weight contribution
     weight_factor = weapon_weight * weight_contrib
 
     base_poise_factor = r2 + weight_factor
-
     base_poise_factor = max(0.0, min(1.0, base_poise_factor))
 
+    # Map curve output into poise damage range
     final_value = min_poise + (base_poise_factor * (max_poise - min_poise))
 
     return max(0.0, min(200.0, final_value * weapon_mult))
@@ -41,10 +49,10 @@ def calculate_weapon_poise(
 
 def calculate_armor_reduction(
     armor_rating,
-    armor_mult=0.040,
+    armor_mult=0.020,
 ):
     """
-    Matches current C++:
+    Matches current C++ armor scaling:
 
     r1 = (AR / 100) * ArmorMult * 5
     reduction = r1/(1+r1)
@@ -58,7 +66,7 @@ def calculate_armor_reduction(
 def apply_armor(
     poise_damage,
     armor_rating,
-    armor_mult_min=0.20,
+    armor_mult_min=0.35,
 ):
 
     reduction = calculate_armor_reduction(armor_rating)
@@ -95,8 +103,8 @@ armor_values = [
 ]
 
 
-print("Normalized 100 Poise System")
-print("==========================")
+print("Weapon Poise System - 100 Poise Baseline")
+print("========================================")
 
 for name, damage, weight, mult in weapons:
 

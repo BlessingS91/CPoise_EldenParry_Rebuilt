@@ -67,7 +67,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 	// 3. Prevent division by zero
 	float damageRange = maxDamage - minDamage;
 	if (damageRange <= 0.0f) {
-		return 15.0f;
+		return 25.0f;
 	}
 
 	// 4. Apply the exact Armor Rating Rescaled algorithm for damage:
@@ -76,7 +76,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 		0.0f,
 		1.0f);
 
-	float r1 = normalizedDamage * 5.0f;
+	float r1 = normalizedDamage * 2.5f;
 	float r2 = r1 / (1.0f + r1);
 
 	// 5. Multiply the rescaled damage factor directly by the flat weight contribution multiplier
@@ -84,14 +84,14 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 	basePoiseFactor = std::clamp(basePoiseFactor, 0.0f, 1.0f);
 
 	// 6. Map the final curve output to your target poise range (15.0f min to 70.0f max)
-	float minPoise = 15.0f;
-	float maxPoise = 70.0f;
+	float minPoise = 25.0f;
+	float maxPoise = 75.0f;
 
 	// Assuming r2 naturally spans from 0.0 to a theoretical ceiling,
 	// we can lerp or scale it directly across your target poise bounds:
 	float finalValue = std::lerp(minPoise, maxPoise, basePoiseFactor);
 
-	logger::debug(
+	logger::info(
 		FMT_STRING(
 			"[Weapon Poise] Weapon={} Damage={} Weight={} "
 			"MinDamage={} MaxDamage={} Normalized={} "

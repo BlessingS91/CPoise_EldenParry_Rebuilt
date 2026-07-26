@@ -143,18 +143,16 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			poiseDamagePercent = 0.0f;
 		}
 
-		if (a_hitData) {
-			if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
-				poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
-				Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
+		if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
+			poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
+			Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
-					   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
-				Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
+		} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
+				   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
+			Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
 
-			} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
-				Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
-			}
+		} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
+			Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
 		}
 
 		logger::debug(

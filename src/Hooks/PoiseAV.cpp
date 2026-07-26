@@ -25,47 +25,51 @@ bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 
 float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 {
-	auto        settings = Settings::GetSingleton();
-	std::string editorID = a_actor->GetRace()->GetFormEditorID();
+	auto settings = Settings::GetSingleton();
 
-	float health;
-	if (!editorID.empty() && (settings->JSONSettings["Races"][editorID] != nullptr))
-		health = (float)settings->JSONSettings["Races"][editorID];
-	else
-		health = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
+	std::string editorID;
 
-	health *= settings->Health.BaseMult;
+	//null safety
+	if (auto race = a_actor->GetRace()) {
+		editorID = race->GetFormEditorID();
+	}
+
+	// Base poise pool
+	float health = settings->Health.BaseMult;
+
+	float mass = 1.0f;
+
+	// Pull custom race mass from JSON if available
+	if (!editorID.empty() && settings->JSONSettings["Races"][editorID] != nullptr) {
+		mass = static_cast<float>(settings->JSONSettings["Races"][editorID]);
+	} else {
+		// Otherwise use Skyrim race mass
+		mass = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
+	}
+
+	mass = std::clamp(mass, 0.5f, 10.0f);
+
+	// Final mass factor applied to base poise
+	float massMultiplier = mass * settings->Health.MassMult;
+
+	health *= massMultiplier;
+
+	logger::debug(
+		FMT_STRING("[Poise Calc] Actor={} Race={} Base={} Mass={} MassMult={} Final={}"),
+		a_actor->GetName(),
+		editorID,
+		settings->Health.BaseMult,
+		mass,
+		settings->Health.MassMult,
+		health);
 
 	return std::clamp(health, 0.0f, std::numeric_limits<float>::max());
 }
 
+//For Leonkingzz Elden Parry system, no extra math needed just use GetBaseActorValue calculations.
 float PoiseAV::Score_GetBaseActorValue(RE::Actor* a_actor)
 {
-	auto        settings = Settings::GetSingleton();
-	std::string editorID = a_actor->GetRace()->GetFormEditorID();
-
-	float health;
-	if (!editorID.empty() && (settings->JSONSettings["Races"][editorID] != nullptr))
-		health = (float)settings->JSONSettings["Races"][editorID];
-	else
-		health = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
-
-	health *= settings->Health.BaseMult;
-
-	//if (auto levelledModifier = (RE::ExtraLevCreaModifier*)a_actor->extraList.GetByType(RE::ExtraDataType::kLevCreaModifier)) {
-	//	auto modifier = levelledModifier->modifier;
-	//	if (modifier.any(RE::LEV_CREA_MODIFIER::kEasy)) {
-	//		health *= 0.75;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kMedium)) {
-	//		health *= 1.00;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kHard)) {
-	//		health *= 1.25;
-	//	} else if (modifier.any(RE::LEV_CREA_MODIFIER::kVeryHard)) {
-	//		health *= 1.50;
-	//	}
-	//}
-
-	return health;
+	return GetBaseActorValue(a_actor);
 }
 
 float PoiseAV::GetActorValueMax([[maybe_unused]] RE::Actor* a_actor)
@@ -96,7 +100,7 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 	if (isAttacking || isCasting) {
 		const auto  actionSettings = Settings::GetSingleton();
-		const float actionMultiplier = (actionSettings && actionSettings->Damage.AttackOfOppourunityMult > 0.0f) ? actionSettings->Damage.AttackOfOppourunityMult : 1.5f;
+		const float actionMultiplier = (actionSettings && actionSettings->Damage.AttackOfOpportunityMult > 0.0f) ? actionSettings->Damage.AttackOfOpportunityMult : 1.5f;
 
 		float beforeActionDamage = a_poiseDamage;
 		a_poiseDamage *= actionMultiplier;

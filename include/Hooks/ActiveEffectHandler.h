@@ -25,7 +25,7 @@ protected:
 			static void thunk(RE::Actor* a_target, RE::ACTOR_VALUE_MODIFIER a_actorValueModifier, RE::ActorValue a_actorValue, float a_magnitudeDelta, RE::Actor* a_caster)
 			{
 				func(a_target, a_actorValueModifier, a_actorValue, a_magnitudeDelta, a_caster);
-				GetSingleton()->ProcessValueModifier(a_target, a_actorValue,  -a_magnitudeDelta, a_caster);
+				GetSingleton()->ProcessValueModifier(a_target, a_actorValue, -a_magnitudeDelta, a_caster);
 			}
 			static inline REL::Relocation<decltype(thunk)> func;
 		};
@@ -52,13 +52,17 @@ protected:
 
 		static void Install()
 		{
-			stl::write_thunk_call<ValueModifier_ModifyActorValue>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x2D1, 0x2CC));   // 1.5.97 140567a80
-			stl::write_thunk_call<ValueModifier_DamageHealth>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x237, 0x232));       // 1.5.97 140567a80
-			//stl::write_thunk_call<ValueModifier_RestoreActorValue>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x13E, 0x138));  // 1.5.97 140567a80
+			stl::write_thunk_call<ValueModifier_ModifyActorValue>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x2D1, 0x2CC));  // 1.5.97 140567a80
+			stl::write_thunk_call<ValueModifier_DamageHealth>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x237, 0x232));      // 1.5.97 140567a80
+																																			 //stl::write_thunk_call<ValueModifier_RestoreActorValue>(REL::RelocationID(34286, 35086).address() + REL::Relocate(0x13E, 0x138));  // 1.5.97 140567a80
 		}
 	};
 
 private:
+	float GetResistanceMultiplier(
+		RE::Actor*     a_target,
+		RE::ActorValue a_actorValue);
+
 	constexpr ActiveEffectHandler() noexcept = default;
 	ActiveEffectHandler(const ActiveEffectHandler&) = delete;
 	ActiveEffectHandler(ActiveEffectHandler&&) = delete;

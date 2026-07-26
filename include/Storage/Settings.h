@@ -48,6 +48,7 @@ public:
 	struct
 	{
 		float BaseMult{ 50 };
+		float MassMult{ 0.050f };
 		float ArmorMult{ 0.25 };
 		float ArmorMultMin = 0.25f;
 		float RegenRate{ 0.050f };
@@ -69,13 +70,13 @@ public:
 		float WeightContribution{ 2.0 };
 		float GauntletWeightContribution{ 1.0 };
 		float UnarmedSkillContribution{ 0.2 };
-		float AttackOfOppourunityMult{ 0.25f };
+		float AttackOfOpportunityMult{ 0.25f };
 
 		float NormalImpactThreshold{ 0.10f };
 		float PowerfulImpactThreshold{ 0.25f };
 		float SeismicImpactThreshold{ 0.50f };
 
-		} Damage;
+	} Damage;
 
 	struct
 	{

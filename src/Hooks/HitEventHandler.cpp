@@ -6,6 +6,7 @@
 
 float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 {
+	/* old weapon json
 	auto settings = Settings::GetSingleton();
 	for (int index = a_weapon->numKeywords - 1; index >= 0; index--) {
 		if (a_weapon->keywords[index]) {
@@ -22,8 +23,93 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 					return std::lerp(static_cast<float>(weaponDamage), a_weapon->weight, settings->Damage.WeightContribution);
 			}
 		}
+	}*/
+
+	auto  settings = Settings::GetSingleton();
+	float weaponMult = 1.0f;
+
+	//weapon type calc
+	for (int index = a_weapon->numKeywords - 1; index >= 0; index--) {
+		if (a_weapon->keywords[index]) {
+			std::string keyword = a_weapon->keywords[index]->formEditorID.c_str();
+
+			auto pos = keyword.find("WeapType");
+			if (pos != 0)
+				continue;
+
+			std::string type = keyword.substr(pos + 8, keyword.length());
+
+			if (type == "Bow" && a_weapon->weaponData.animationType == RE::WEAPON_TYPE::kCrossbow)
+				type = "Crossbow";
+
+			auto multiplier = settings->JSONSettings["Weapons"]["Multipliers"][type];
+
+			if (multiplier != nullptr) {
+				weaponMult = multiplier.get<float>();
+			}
+
+			break;
+		}
 	}
-	return a_weapon->weight;
+
+	if (!a_weapon || !_minWeapon || !_maxWeapon) {
+		return a_weapon ? a_weapon->weight : 0.0f;  // Fallback if data isn't ready
+	}
+
+	// 1. Get settings singleton for configuration multipliers
+	float weightContrib = settings ? settings->Damage.WeightContribution : 0.005f;
+
+	// 2. Get base attack damage stats from the cached baseline weapons
+	float minDamage = _minWeapon->GetAttackDamage();
+	float maxDamage = _maxWeapon->GetAttackDamage() * 7.0f;
+	float currentDamage = a_weapon->GetAttackDamage();
+
+	// 3. Prevent division by zero
+	float damageRange = maxDamage - minDamage;
+	if (damageRange <= 0.0f) {
+		return 15.0f;
+	}
+
+	// 4. Apply the exact Armor Rating Rescaled algorithm for damage:
+	float normalizedDamage = std::clamp(
+		(currentDamage - minDamage) / damageRange,
+		0.0f,
+		1.0f);
+
+	float r1 = normalizedDamage * 5.0f;
+	float r2 = r1 / (1.0f + r1);
+
+	// 5. Multiply the rescaled damage factor directly by the flat weight contribution multiplier
+	float basePoiseFactor = r2 + (a_weapon->weight * weightContrib);
+	basePoiseFactor = std::clamp(basePoiseFactor, 0.0f, 1.0f);
+
+	// 6. Map the final curve output to your target poise range (15.0f min to 70.0f max)
+	float minPoise = 15.0f;
+	float maxPoise = 70.0f;
+
+	// Assuming r2 naturally spans from 0.0 to a theoretical ceiling,
+	// we can lerp or scale it directly across your target poise bounds:
+	float finalValue = std::lerp(minPoise, maxPoise, basePoiseFactor);
+
+	logger::debug(
+		FMT_STRING(
+			"[Weapon Poise] Weapon={} Damage={} Weight={} "
+			"MinDamage={} MaxDamage={} Normalized={} "
+			"ARRFactor={} WeightFactor={} BaseFactor={} "
+			"WeaponMult={} Final={}"),
+		a_weapon->GetName(),
+		currentDamage,
+		a_weapon->weight,
+		minDamage,
+		maxDamage,
+		normalizedDamage,
+		r2,
+		a_weapon->weight * weightContrib,
+		basePoiseFactor,
+		weaponMult,
+		finalValue);
+
+	return std::clamp(finalValue * weaponMult, 0.0f, 200.0f);
 }
 
 float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
@@ -67,6 +153,7 @@ float HitEventHandler::ModActorBashMult(RE::Actor* aggressor)
 	return a_value;
 }
 
+//Damage Mitication Calcs
 float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData)
 {
 	auto  settings = Settings::GetSingleton();
@@ -129,7 +216,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	float totalArmor = (std::max)(0.0f, static_cast<float>(target->GetActorRuntimeData().armorRating));
 
 	// 1. Calculate r1 (1:1 mirror with Armor Rating Rescaled Health math)
-	float r1 = (totalArmor / 100.0f) * settings->Health.ArmorMult;
+	float r1 = (totalArmor / 100.0f) * settings->Health.ArmorMult * 5.0f;
 
 	// 2. Hyperbolic reduction percentage (r2)
 	float armorReduction = r1 / (1.0f + r1);

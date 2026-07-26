@@ -72,6 +72,9 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Health.BaseMult = static_cast<float>(
 		ini.GetValue("Health", "BaseMult", nullptr) ? ini.GetDoubleValue("Health", "BaseMult", Health.BaseMult) : ini.GetDoubleValue("Health Settings", "Base Mult", Health.BaseMult));
 
+	Health.MassMult = static_cast<float>(
+		ini.GetValue("Health", "BaseMult", nullptr) ? ini.GetDoubleValue("Health", "MassMult", Health.MassMult) : ini.GetDoubleValue("Health Settings", "Mass Mult", Health.MassMult));
+
 	Health.ArmorMult = static_cast<float>(
 		ini.GetValue("Health", "ArmorMult", nullptr) ? ini.GetDoubleValue("Health", "ArmorMult", Health.ArmorMult) : ini.GetDoubleValue("Health Settings", "Armor Mult", Health.ArmorMult));
 
@@ -115,7 +118,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.UnarmedSkillContribution = static_cast<float>(
 		ini.GetValue("Damage", "UnarmedSkillContribution", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Skill Contribution", Damage.UnarmedSkillContribution));
 
-	Damage.AttackOfOppourunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOppourtunityMult", 1.5));
+	Damage.AttackOfOpportunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOpportunityMult ", 1.5));
 
 	// Impact Thresholds
 	Damage.NormalImpactThreshold = static_cast<float>(

@@ -57,10 +57,13 @@ public:
 	struct
 	{
 		float BashMult{ 1.0f };
-		float ArrowContribution{ 0.05f };
+		float ArrowDamageMult{ 0.25f };
+		float BowDrawSpeedMult{ 1.0f };
+		float CrossbowMult = 1.15f;
 		float CreatureMult{ 1.5f };
 		float MeleeMult{ 1.0f };
 		float UnarmedMult{ 1.0f };
+		float NormalAttackMult{ 1.0 };
 		float PowerAttackMult{ 1.0f };
 
 		float ToPCMult{ 1.0f };

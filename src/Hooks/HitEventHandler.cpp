@@ -4,26 +4,11 @@
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
 
-float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
+float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreWeight)
 {
-	/* old weapon json
-	auto settings = Settings::GetSingleton();
-	for (int index = a_weapon->numKeywords - 1; index >= 0; index--) {
-		if (a_weapon->keywords[index]) {
-			std::string keyword = a_weapon->keywords[index]->formEditorID.c_str();
-			auto        pos = keyword.find("WeapType");
-			if (pos != 0)
-				continue;
-			std::string type = keyword.substr(pos + 8, keyword.length());
-			if (type == "Bow" && a_weapon->weaponData.animationType == RE::WEAPON_TYPE::kCrossbow)
-				type = "Crossbow";
-			if (!type.empty()) {
-				auto weaponDamage = settings->JSONSettings["Weapons"]["Damage"][type];
-				if (weaponDamage != nullptr)
-					return std::lerp(static_cast<float>(weaponDamage), a_weapon->weight, settings->Damage.WeightContribution);
-			}
-		}
-	}*/
+	if (!a_weapon || !_minWeapon || !_maxWeapon) {
+		return a_weapon ? a_weapon->weight : 0.0f;  // Fallback if data isn't ready
+	}
 
 	auto  settings = Settings::GetSingleton();
 	float weaponMult = 1.0f;
@@ -55,10 +40,6 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 		}
 	}
 
-	if (!a_weapon || !_minWeapon || !_maxWeapon) {
-		return a_weapon ? a_weapon->weight : 0.0f;  // Fallback if data isn't ready
-	}
-
 	// 1. Get settings singleton for configuration multipliers
 	float weightContrib = settings ? settings->Damage.WeightContribution : 0.005f;
 
@@ -83,7 +64,10 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 	float r2 = r1 / (1.0f + r1);
 
 	// 5. Multiply the rescaled damage factor directly by the flat weight contribution multiplier
-	float basePoiseFactor = r2 + (a_weapon->weight * weightContrib);
+	float weightFactor = ignoreWeight ? 0.0f : (a_weapon->weight * weightContrib);
+
+	float basePoiseFactor = r2 + weightFactor;
+
 	basePoiseFactor = std::clamp(basePoiseFactor, 0.0f, 1.0f);
 
 	// 6. Map the final curve output to your target poise range (15.0f min to 70.0f max)
@@ -95,6 +79,8 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 	float finalValue = std::lerp(minPoise, maxPoise, basePoiseFactor);
 
 	if (settings->Debug.LogWeaponCalcs) {
+		float outputValue = std::clamp(finalValue * weaponMult, 0.0f, 200.0f);
+
 		logger::info(
 			FMT_STRING(
 				"[Weapon Poise] Weapon={} Type={} Damage={} Weight={} "
@@ -112,10 +98,106 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon)
 			a_weapon->weight * weightContrib,
 			basePoiseFactor,
 			weaponMult,
-			finalValue);
+			outputValue);
 	}
 
 	return std::clamp(finalValue * weaponMult, 0.0f, 200.0f);
+}
+
+float HitEventHandler::CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjectWEAP* weapon)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (!weapon) {
+		return 0.0f;
+	}
+
+	if (weapon->IsHandToHandMelee()) {
+		float unarmedDamage = GetUnarmedDamage(aggressor);
+		return unarmedDamage * settings->Damage.UnarmedMult;
+	}
+
+	float weaponDamage = GetWeaponDamage(weapon);
+
+	return weaponDamage * settings->Damage.MeleeMult;
+}
+
+float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Projectile* projectile)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (settings->Debug.LogWeaponCalcs) {
+		logger::info(
+			"[Bow Calc START] Projectile={}",
+			projectile ? projectile->GetName() : "NULL");
+	}
+
+	auto& data = projectile->GetProjectileRuntimeData();
+
+	if (!data.weaponSource) {
+		if (settings->Debug.LogWeaponCalcs) {
+			logger::info(
+				"[Bow Calc] Missing weaponSource Projectile={}",
+				projectile ? projectile->GetName() : "NULL");
+		}
+		return 0.0f;
+	}
+
+	float bowDamage = GetWeaponDamage(data.weaponSource);
+
+	float drawFactor = 1.0f;
+
+	float bowSpeed = data.weaponSource->GetSpeed();
+	if (bowSpeed > 0.0f) {
+		drawFactor =
+			1.0f +
+			((1.0f / bowSpeed) - 1.0f) *
+				settings->Damage.BowDrawSpeedMult;
+	}
+
+	float arrowDamage = 0.0f;
+
+	if (data.ammoSource) {
+		arrowDamage =
+			data.ammoSource->GetRuntimeData().data.damage;
+	}
+
+	float arrowContribution =
+		arrowDamage * settings->Damage.ArrowDamageMult;
+
+	float stagger =
+		(bowDamage * drawFactor) +
+		arrowContribution;
+
+	float bowBonus = 0.0f;
+
+	if (aggressor && aggressor->AsActorValueOwner()) {
+		bowBonus =
+			aggressor->AsActorValueOwner()->GetActorValue(
+				RE::ActorValue::kBowStaggerBonus);
+	}
+
+	stagger *= 1.0f + bowBonus;
+
+	if (settings->Debug.LogWeaponCalcs) {
+		logger::info(
+			"[Bow Calc] Weapon={} Ammo={} "
+			"BowDamage={:.2f} BowSpeed={:.3f} DrawFactor={:.3f} "
+			"ArrowDamage={:.2f} ArrowMult={:.3f} ArrowContribution={:.2f} "
+			"BowBonus={:.2f} FinalStagger={:.2f}",
+			data.weaponSource->GetName(),
+			data.ammoSource ? data.ammoSource->GetName() : "NULL",
+			bowDamage,
+			bowSpeed,
+			drawFactor,
+			arrowDamage,
+			settings->Damage.ArrowDamageMult,
+			arrowDamage * settings->Damage.ArrowDamageMult,
+			bowBonus,
+			stagger);
+	}
+
+	return stagger;
 }
 
 float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
@@ -146,218 +228,92 @@ float HitEventHandler::GetMiscDamage()
 	return 5.0f;
 }
 
-float HitEventHandler::ModActorBashMult(RE::Actor* aggressor)
+bool HitEventHandler::IsCreature(RE::Actor* actor)
 {
-	float a_value = 0.0f;
-
-	if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.SkullRattler_Perk); perk) {
-		if (aggressor->HasPerk(perk)) {
-			a_value = 0.25f;
-		}
+	if (!actor) {
+		return false;
 	}
 
-	return a_value;
+	auto race = actor->GetRace();
+	if (!race) {
+		return false;
+	}
+
+	auto npcKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0x00013794);
+
+	if (!npcKeyword) {
+		return false;
+	}
+
+	return !race->HasKeyword(npcKeyword);
 }
 
-float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData)
+float HitEventHandler::ApplyAttackMultiplier(RE::HitData* hitData, float stagger)
 {
 	auto settings = Settings::GetSingleton();
 
-	float stagger = 0.0f;
+	auto attackData =
+		hitData->attackData ? hitData->attackData.get() : nullptr;
 
-	auto sourceRef = hitData->sourceRef.get().get();
-
-	logger::info(
-		"[Recalculate START] Target={} Aggressor={} WeaponPtr={} Skill={}",
-		target ? target->GetName() : "NULL",
-		aggressor ? aggressor->GetName() : "NULL",
-		fmt::ptr(hitData->weapon),
-		static_cast<int>(hitData->skill));
-
-	// ==========================
-	// Bow / Projectile Attacks
-	// ==========================
-	if (sourceRef && sourceRef->AsProjectile()) {
-		auto  projectile = sourceRef->AsProjectile();
-		auto& projectileData = projectile->GetProjectileRuntimeData();
-
-		if (projectileData.ammoSource && projectileData.weaponSource) {
-			// Bow damage is already converted through GetWeaponDamage()
-			// using the normal weapon poise curve.
-			float bowDamage = GetWeaponDamage(projectileData.weaponSource);
-
-			// Arrow damage acts as the ranged equivalent of melee weapon weight.
-			// It provides additional impact force without replacing the bow's
-			// primary damage scaling.
-			float arrowDamage =
-				static_cast<float>(projectileData.ammoSource->data.damage);
-
-			// Arrow impact contribution.
-			// Lower values make bow quality matter more.
-			// Higher values make arrow upgrades matter more.
-			float arrowContribution = arrowDamage * settings->Damage.ArrowContribution;
-
-			// Combine bow force and projectile impact.
-			stagger = bowDamage + arrowContribution;
-
-			// Skyrim actor value bonus for bow stagger.
-			float bowStaggerBonus =
-				aggressor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kBowStaggerBonus);
-
-			stagger *= 1.0f + bowStaggerBonus;
-
-			if (settings->Debug.LogWeaponCalcs) {
-				logger::info(
-					FMT_STRING(
-						"[Bow Calc] Weapon={} BowDamage={} ArrowDamage={} "
-						"ArrowContribution={} BowBonus={} FinalStagger={}"),
-					projectileData.weaponSource->GetName(),
-					bowDamage,
-					arrowDamage,
-					arrowContribution,
-					bowStaggerBonus,
-					stagger);
-			}
-		}
+	if (!attackData) {
+		return stagger;
 	}
-	// ==========================
-	// Weapon Attacks
-	// ==========================
-	if (hitData->weapon && hitData->weapon->formType != RE::FormType::Weapon) {
+
+	float staggerOffset = attackData->data.staggerOffset;
+
+	float attackMult = 1.0f;
+
+	if (staggerOffset == 0.0f) {
+		// Normal attack
+		attackMult = settings->Damage.NormalAttackMult;
+	} else if (staggerOffset == 1.0f) {
+		// Power attack
+		attackMult = settings->Damage.PowerAttackMult;
+	}
+
+	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
-			"[Skipping Non Weapon Hit] FormType={} Skill={} Flags={}",
-			hitData->weapon->GetFormEditorID(),
-			static_cast<int>(hitData->skill),
-			hitData->flags.underlying());
+			FMT_STRING("[Attack Data] Offset={} AttackMult={}"),
+			staggerOffset,
+			attackMult);
+	}
 
+	return stagger * attackMult;
+}
+
+float HitEventHandler::CalculateBashStagger(RE::Actor* aggressor)
+{
+	if (!aggressor) {
 		return 0.0f;
 	}
 
-	else if (hitData->weapon) {
-		auto weapon = hitData->weapon->As<RE::TESObjectWEAP>();
+	auto settings = Settings::GetSingleton();
 
-		if (!weapon) {
-			logger::info(
-				"[Skipping Non Weapon Hit] FormType={} Skill={} Flags={}",
-				static_cast<int>(hitData->weapon->GetFormType()),
-				static_cast<int>(hitData->skill),
-				hitData->flags.underlying());
-			return 0.0f;
-		}
+	float bashMultiplier = settings->Damage.BashMult;
 
-		if (weapon->IsHandToHandMelee()) {
-			float unarmedDamage = GetUnarmedDamage(aggressor);
-			stagger = unarmedDamage * settings->Damage.UnarmedMult;
-		} else {
-			float weaponDamage = GetWeaponDamage(weapon);
-			stagger = weaponDamage * settings->Damage.MeleeMult;
-		}
+	if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(
+			Milf::GetSingleton()->perks.SkullRattler_Perk);
+		perk && aggressor->HasPerk(perk)) {
+		bashMultiplier += 0.25f;
 	}
 
-	// ==========================
-	// Creature Attacks
-	// ==========================
-	else if (hitData->skill == RE::ActorValue::kNone) {
-		stagger =
-			hitData->physicalDamage *
-			settings->Damage.CreatureMult;
+	auto leftHand = aggressor->GetEquippedObject(true);
+	auto rightHand = aggressor->GetEquippedObject(false);
+
+	if (leftHand && leftHand->formType == RE::FormType::Armor) {
+		return GetShieldDamage(leftHand->As<RE::TESObjectARMO>()) * bashMultiplier;
 	}
 
-	// ==========================
-	// Bash Attacks
-	// ==========================
-	else if (hitData->skill == RE::ActorValue::kBlock) {
-		auto leftHand = aggressor->GetEquippedObject(true);
-		auto rightHand = aggressor->GetEquippedObject(false);
-
-		float bashMultiplier =
-			settings->Damage.BashMult +
-			ModActorBashMult(aggressor);
-
-		// Shield bash
-		if (leftHand && leftHand->formType == RE::FormType::Armor) {
-			stagger =
-				GetShieldDamage(leftHand->As<RE::TESObjectARMO>()) * bashMultiplier;
-		}
-
-		// Weapon bash
-		else if (rightHand && rightHand->formType == RE::FormType::Weapon) {
-			stagger =
-				GetWeaponDamage(rightHand->As<RE::TESObjectWEAP>()) * bashMultiplier;
-		}
-
-		// Generic bash
-		else {
-			stagger =
-				GetMiscDamage() * bashMultiplier;
-		}
+	if (rightHand && rightHand->formType == RE::FormType::Weapon) {
+		return GetWeaponDamage(rightHand->As<RE::TESObjectWEAP>()) * bashMultiplier;
 	}
 
-	// ==========================
-	// Unknown Attack
-	// ==========================
-	else {
-		logger::debug("Unknown attack type");
-		return 0.0f;
-	}
+	return GetMiscDamage() * bashMultiplier;
+}
 
-	// Power Attack Multiplier
-	auto attackData = hitData->attackData ? hitData->attackData.get() : nullptr;
-
-	if (attackData) {
-		float attackMult = 1.0f + attackData->data.staggerOffset;
-
-		if (attackData->data.staggerOffset >= 1.0f) {
-			attackMult *= settings->Damage.PowerAttackMult;
-		}
-
-		if (settings->Debug.LogStaggerCalcs) {
-			logger::info(
-				FMT_STRING("[Attack Data] staggerOffset={} FinalMult={}"),
-				attackData->data.staggerOffset,
-				attackMult);
-		}
-
-		stagger *= attackMult;
-	}
-
-	// Blocking Mult
-	float baseMult = 1.0f - hitData->percentBlocked;
-
-	if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
-		logger::info(FMT_STRING(
-						 "Block Calc: PercentBlocked={} InitialBlockMult={}"),
-			hitData->percentBlocked,
-			baseMult);
-	}
-
-	PoiseAV::ApplyPerkEntryPoint(34, aggressor, target, &baseMult);
-	PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
-
-	if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
-		logger::info(FMT_STRING(
-						 "Block Calc After Perks: FinalBlockMult={} StaggerBefore={} StaggerAfter={}"),
-			baseMult,
-			stagger,
-			stagger * baseMult);
-	}
-
-	stagger *= baseMult;
-
-	/*
-	// Additional Damage Scaling:
-	// Scales stagger based on non-physical damage sources (ex: enchantments, poisons,
-	// elemental effects) by comparing total damage against physical damage.
-	// Currently disabled because this system does not account for resistances.
-	
-	if (hitData->totalDamage > 0.0f && hitData->physicalDamage > 0.0f) {
-		float damageRatio = hitData->totalDamage / hitData->physicalDamage;
-		damageRatio = std::clamp(damageRatio, 0.0f, 3.0f);
-
-		stagger *= damageRatio;
-	}
-	*/
-
+float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
+{
+	auto settings = Settings::GetSingleton();
 	// --- Pure Hyperbolic Armor Reduction (ARR) ---
 	float totalArmor = (std::max)(0.0f,
 		static_cast<float>(target->GetActorRuntimeData().armorRating));
@@ -396,36 +352,182 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 			stagger);
 	}
 
-	if (stagger > 0.00) {
-		// Apply additional block-based stagger reduction only when the hit was blocked.
-		if (hitData->flags.all(RE::HitData::Flag::kBlocked)) {
-			// Check if the target has the perk that enables this custom blocking behavior.
-			if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.AlikrDance_Perk); perk && target->HasPerk(perk)) {
-				// Determine whether the block was performed with a weapon or a shield.
-				bool weaponblock = hitData->flags.all(RE::HitData::Flag::kBlockWithWeapon);
+	return stagger;
+}
 
-				// Convert the Block skill into a stagger multiplier.
-				// Higher Block skill results in greater stagger reduction.
-				auto block_score = 1.0f - (target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kBlock) / 100.0f);
+float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* aggressor, RE::Actor* target, float stagger)
+{
+	auto settings = Settings::GetSingleton();
 
-				// Enforce minimum stagger values to prevent blocking from completely
-				// negating stagger. Weapon blocks have a higher minimum than shield blocks.
-				if (weaponblock) {
-					if (block_score < 0.30) {
-						block_score = 0.30;
-					}
-				} else {
-					if (block_score < 0.15) {
-						block_score = 0.15;
-					}
-				}
+	float baseMult = 1.0f - hitData->percentBlocked;
 
-				// Apply the final block reduction multiplier.
-				stagger *= block_score;
+	if (settings->Debug.LogArmorCalcs) {
+		logger::info(FMT_STRING(
+						 "Block Calc: PercentBlocked={} InitialBlockMult={}"),
+			hitData->percentBlocked,
+			baseMult);
+	}
+
+	PoiseAV::ApplyPerkEntryPoint(34, aggressor, target, &baseMult);
+	PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
+
+	if (settings->Debug.LogArmorCalcs) {
+		logger::info(FMT_STRING(
+						 "Block Calc After Perks: FinalBlockMult={} StaggerBefore={} StaggerAfter={}"),
+			baseMult,
+			stagger,
+			stagger * baseMult);
+	}
+
+	return stagger * baseMult;
+}
+
+float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData)
+{
+	auto settings = Settings::GetSingleton();
+
+	float stagger = 0.0f;
+
+	auto sourceRef = hitData->sourceRef.get().get();
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			"[Recalculate START] Target={} Aggressor={} WeaponPtr={} Skill={}",
+			target ? target->GetName() : "NULL",
+			aggressor ? aggressor->GetName() : "NULL",
+			fmt::ptr(hitData->weapon),
+			static_cast<int>(hitData->skill));
+	}
+
+	// ==========================
+	// Bash Attacks
+	// ==========================
+	if (hitData->skill == RE::ActorValue::kBlock) {
+		stagger = CalculateBashStagger(aggressor);
+	}
+
+	// ==========================
+	// Bow / Projectile Attacks
+	// ==========================
+	else if (auto projectile = sourceRef ? sourceRef->AsProjectile() : nullptr) {
+		stagger = CalculateProjectileStagger(
+			aggressor,
+			projectile);
+	}
+
+	// ==========================
+	// Weapon / Unarmed Attacks
+	// ==========================
+	else if (hitData->weapon) {
+		auto weapon = hitData->weapon->As<RE::TESObjectWEAP>();
+
+		if (!weapon) {
+			return 0.0f;
+		}
+
+		if (weapon->IsHandToHandMelee()) {
+			if (!aggressor) {
+				return 0.0f;
 			}
+
+			stagger =
+				GetUnarmedDamage(aggressor) *
+				settings->Damage.UnarmedMult;
+		} else {
+			stagger =
+				CalculateWeaponStagger(aggressor, weapon);
 		}
 	}
 
+	// ==========================
+	// No Skill / Physical Damage
+	// ==========================
+	else if (hitData->skill == RE::ActorValue::kNone) {
+		// ==========================
+		// Environmental Damage
+		// Traps, hazards, scripted world damage
+		// ==========================
+		if (!aggressor) {
+			if (settings->Debug.LogStaggerCalcs) {
+				logger::debug(
+					FMT_STRING(
+						"[Environmental Physical Hit] Target={} Damage={} Physical={} Flags={} Source={}"),
+					target ? target->GetName() : "NULL",
+					hitData->totalDamage,
+					hitData->physicalDamage,
+					hitData->flags.underlying(),
+					sourceRef ? sourceRef->GetName() : "NULL");
+			}
+
+			stagger =
+				hitData->physicalDamage *
+				settings->Damage.CreatureMult;
+		}
+
+		// ==========================
+		// Creature Physical Attacks
+		// No weapon data, no skill
+		// ==========================
+		else if (IsCreature(aggressor)) {
+			if (settings->Debug.LogStaggerCalcs) {
+				logger::debug(
+					FMT_STRING(
+						"[Creature Physical Hit] Target={} Aggressor={} Damage={} Physical={} Flags={} Source={}"),
+					target ? target->GetName() : "NULL",
+					aggressor ? aggressor->GetName() : "NULL",
+					hitData->totalDamage,
+					hitData->physicalDamage,
+					hitData->flags.underlying(),
+					sourceRef ? sourceRef->GetName() : "NULL");
+			}
+
+			stagger =
+				hitData->physicalDamage *
+				settings->Damage.CreatureMult;
+		}
+
+		// ==========================
+		// Unknown kNone Actor Hit
+		// ==========================
+		else {
+			if (settings->Debug.LogStaggerCalcs) {
+				logger::debug(
+					FMT_STRING(
+						"[Unknown kNone Actor Hit] Target={} Aggressor={} Damage={} Physical={} Flags={} Source={}"),
+					target ? target->GetName() : "NULL",
+					aggressor ? aggressor->GetName() : "NULL",
+					hitData->totalDamage,
+					hitData->physicalDamage,
+					hitData->flags.underlying(),
+					sourceRef ? sourceRef->GetName() : "NULL");
+			}
+
+			stagger = 0.0f;
+		}
+	}
+
+	// ==========================
+	// Unknown Attack
+	// ==========================
+	else {
+		logger::debug("Unknown attack type");
+		return 0.0f;
+	}
+
+	// Attack Multiplier
+	stagger = ApplyAttackMultiplier(hitData, stagger);
+
+	// Armor Multipliers
+	stagger = ApplyArmorReduction(target, stagger);
+
+	// Blocking Multiplier
+	stagger = ApplyBlockingMultiplier(hitData, aggressor, target, stagger);
+
+	// 			stagger *= block_score;
+	// 		}
+	// 	}
+	// }
+	//Final Log
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
 			FMT_STRING("[RecalculateStagger END] Target={} Aggressor={} FinalStagger={}"),
@@ -436,72 +538,60 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	return stagger;
 }
 
-// Retrieves Skyrim's difficulty-based damage multiplier.
-// If the victim is the player, returns the "damage taken by player" multiplier (fDiffMultHPToPC).
-// Otherwise, returns the "damage dealt by player" multiplier (fDiffMultHPByPC).
-// Used to keep poise damage scaling consistent with Skyrim's difficulty settings.
-inline float getDamageMult(bool is_victim_player)
-{
-	auto              difficulty = RE::PlayerCharacter::GetSingleton()->GetGameStatsData().difficulty;
-	const std::vector diff_str = { "VE", "E", "N", "H", "VH", "L" };
-
-	auto setting_name = fmt::format("fDiffMultHP{}PC{}", is_victim_player ? "To" : "By", diff_str[difficulty]);
-	auto setting = RE::GameSettingCollection::GetSingleton()->GetSetting(setting_name.c_str());
-
-	return setting->data.f;
-}
-
 void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 {
 	if (!target || !hitData) {
 		return;
 	}
 
-	logger::info(
-		"[HitData] Target={} Aggressor={} Weapon={} Damage={} Stagger={} Flags={} Skill={} PhysicalDamage={}",
-		target ? target->GetName() : "NULL",
-		hitData->aggressor ? hitData->aggressor.get()->GetName() : "NULL",
-		hitData->weapon && hitData->weapon->GetFormType() == RE::FormType::Weapon ?
-			hitData->weapon->GetName() :
-			(hitData->weapon ? "<NonWeapon>" : "NULL"),
-		hitData->totalDamage,
-		hitData->stagger,
-		hitData->flags.underlying(),
-		std::string(magic_enum::enum_name(hitData->skill)),
-		hitData->physicalDamage);
+	auto settings = Settings::GetSingleton();
 
-	auto poiseAV = PoiseAV::GetSingleton();
-
-	// Get the actor responsible for the hit.
-	auto aggressor = hitData->aggressor ? hitData->aggressor.get().get() : nullptr;
-
-	if (!aggressor && hitData->totalDamage <= 0.0f) {
-		return;
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[PreProcessHit] Target={} Aggressor={} Weapon={} Damage={} Flags={} Skill={} PhysicalDamage={}"),
+			target ? target->GetName() : "NULL",
+			hitData->aggressor ? hitData->aggressor.get()->GetName() : "NULL",
+			hitData->weapon && hitData->weapon->GetFormType() == RE::FormType::Weapon ?
+				hitData->weapon->GetName() :
+				(hitData->weapon ? "<NonWeapon>" : "NULL"),
+			hitData->totalDamage,
+			hitData->flags.underlying(),
+			std::string(magic_enum::enum_name(hitData->skill)),
+			hitData->physicalDamage);
 	}
 
-	if (aggressor && poiseAV->CanDamageActor(target)) {
-		// Skip poise damage on killing blows.
-		// Prevents a final hit from also triggering unnecessary stagger/poise effects.
-		if (!(target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= hitData->totalDamage)) {
-			// Convert the incoming hit into custom poise damage.
-			// Handles weapon damage, attack type multipliers, blocking,
-			// armor scaling, and other stagger calculations.DamageAndCheckPoise
-			auto poiseDamage = RecalculateStagger(target, aggressor, hitData);
+	// Get the actor responsible for the hit.
+	auto poiseAV = PoiseAV::GetSingleton();
+	auto aggressor = hitData->aggressor ? hitData->aggressor.get().get() : nullptr;
 
-			// Apply damage to the target's poise health and check for stagger/break events.
+	// Actor cannot receive poise damage
+	if (!poiseAV->CanDamageActor(target)) {
+		return;
+	}
+	// No attacker = environmental hit, skip for now
+	if (!aggressor) {
+		return;
+	}
+	if (!(target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= hitData->totalDamage)) {
+		auto poiseDamage = RecalculateStagger(target, aggressor, hitData);
+
+		if (settings->Debug.LogStaggerCalcs) {
 			logger::info(
-				"[Poise Call] Target={} Aggressor={} HitData={} Damage={}",
+				FMT_STRING(
+					"[PreProcessHit - End] Target={} Aggressor={} HitData={} Damage={}"),
 				target->GetName(),
 				aggressor ? aggressor->GetName() : "NULL",
 				fmt::ptr(hitData),
 				poiseDamage);
-			poiseAV->DamageAndCheckPoise(target, aggressor, poiseDamage, hitData);
 		}
+
+		poiseAV->DamageAndCheckPoise(target, aggressor, poiseDamage, hitData);
 	}
 
 	// Disable Skyrim's vanilla stagger calculation.
 	// This system replaces it with the custom poise-based stagger system above.
-	hitData->stagger = static_cast<uint32_t>(0.00);
+	hitData->stagger = 0;
 }
 
 // void HitEventHandler::PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData)
@@ -513,5 +603,48 @@ void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 // 	RE::HitData* hitData_ptr = hitData;
 
 // 	handler->PreProcessHit(a_precisionHitData.target->As<RE::Actor>(), hitData_ptr);
+
 // 	return;
 // }
+
+//old leonkingzz stuff
+// if (stagger > 0.00) {
+// 	// Apply additional block-based stagger reduction only when the hit was blocked.
+// 	if (hitData->flags.all(RE::HitData::Flag::kBlocked)) {
+// 		// Check if the target has the perk that enables this custom blocking behavior.
+// 		if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(Milf::GetSingleton()->perks.AlikrDance_Perk); perk && target->HasPerk(perk)) {
+// 			// Determine whether the block was performed with a weapon or a shield.
+// 			bool weaponblock = hitData->flags.all(RE::HitData::Flag::kBlockWithWeapon);
+
+// 			// Convert the Block skill into a stagger multiplier.
+// 			// Higher Block skill results in greater stagger reduction.
+// 			auto block_score = 1.0f - (target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kBlock) / 100.0f);
+
+// 			// Enforce minimum stagger values to prevent blocking from completely
+// 			// negating stagger. Weapon blocks have a higher minimum than shield blocks.
+// 			if (weaponblock) {
+// 				if (block_score < 0.30) {
+// 					block_score = 0.30;
+// 				}
+// 			} else {
+// 				if (block_score < 0.15) {
+// 					block_score = 0.15;
+// 				}
+// 			}
+
+// 			// Apply the final block reduction multiplier.
+
+///////////////////////////UNUSED FROM VANILLA CHOCOLATE POISE, MIGHT COME BACK///////////////////////////////////////////////////
+/*
+	// Additional Damage Scaling:
+	// Scales stagger based on non-physical damage sources (ex: enchantments, poisons,
+	// elemental effects) by comparing total damage against physical damage.
+	// Currently disabled because this system does not account for resistances.
+	
+	if (hitData->totalDamage > 0.0f && hitData->physicalDamage > 0.0f) {
+		float damageRatio = hitData->totalDamage / hitData->physicalDamage;
+		damageRatio = std::clamp(damageRatio, 0.0f, 3.0f);
+
+		stagger *= damageRatio;
+	}
+	*/

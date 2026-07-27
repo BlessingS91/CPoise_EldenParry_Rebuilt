@@ -88,10 +88,20 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.BashMult = static_cast<float>(
 		ini.GetValue("Damage", "BashMult", nullptr) ? ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult) : ini.GetDoubleValue("Damage Settings", "Bash Mult", Damage.BashMult));
 
-	Damage.ArrowContribution = static_cast<float>(
-		ini.GetValue("Damage", "ArrowContribution", nullptr) ?
-			ini.GetDoubleValue("Damage", "ArrowContribution", Damage.ArrowContribution) :
-			ini.GetDoubleValue("Damage Settings", "Arrow Contribution", Damage.ArrowContribution));
+	Damage.ArrowDamageMult = static_cast<float>(
+		ini.GetValue("Damage", "ArrowDamageMult", nullptr) ?
+			ini.GetDoubleValue("Damage", "ArrowDamageMult", Damage.ArrowDamageMult) :
+			ini.GetDoubleValue("Damage Settings", "Arrow Damage Mult", Damage.ArrowDamageMult));
+
+	Damage.BowDrawSpeedMult = static_cast<float>(
+		ini.GetValue("Damage", "BowDrawSpeedMult", nullptr) ?
+			ini.GetDoubleValue("Damage", "BowDrawSpeedMult", Damage.BowDrawSpeedMult) :
+			ini.GetDoubleValue("Damage Settings", "Bow Draw Speed Mult", Damage.BowDrawSpeedMult));
+
+	Damage.CrossbowMult = static_cast<float>(
+		ini.GetValue("Damage", "CrossbowMult", nullptr) ?
+			ini.GetDoubleValue("Damage", "CrossbowMult", Damage.CrossbowMult) :
+			ini.GetDoubleValue("Damage Settings", "Crossbow Mult", Damage.CrossbowMult));
 
 	Damage.CreatureMult = static_cast<float>(
 		ini.GetValue("Damage", "CreatureMult", nullptr) ? ini.GetDoubleValue("Damage", "CreatureMult", Damage.CreatureMult) : ini.GetDoubleValue("Damage Settings", "Creature Mult", Damage.CreatureMult));
@@ -101,6 +111,9 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	Damage.UnarmedMult = static_cast<float>(
 		ini.GetValue("Damage", "UnarmedMult", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedMult", Damage.UnarmedMult) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Damage Mult", Damage.UnarmedMult));
+
+	Damage.NormalAttackMult = static_cast<float>(
+		ini.GetValue("Damage", "NormalAttackMult", nullptr) ? ini.GetDoubleValue("Damage", "NormalAttackMult", Damage.NormalAttackMult) : ini.GetDoubleValue("Damage Settings", "Normal Attack Mult", Damage.NormalAttackMult));
 
 	Damage.PowerAttackMult = static_cast<float>(
 		ini.GetValue("Damage", "PowerAttackMult", nullptr) ? ini.GetDoubleValue("Damage", "PowerAttackMult", Damage.PowerAttackMult) : ini.GetDoubleValue("Damage Settings", "Power Attack Mult", Damage.PowerAttackMult));
@@ -179,16 +192,25 @@ void Settings::LoadINI(const wchar_t* a_path)
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
 	logger::info(FMT_STRING("  [Health] BaseMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
 		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING("  [Damage] BashMult={} ArrowContribution={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
-		Damage.BashMult, Damage.ArrowContribution, Damage.CreatureMult, Damage.MeleeMult, Damage.UnarmedMult);
+	logger::info(FMT_STRING("  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
+		Damage.BashMult,
+		Damage.ArrowDamageMult,
+		Damage.BowDrawSpeedMult,
+		Damage.CrossbowMult,
+		Damage.CreatureMult,
+		Damage.MeleeMult,
+		Damage.UnarmedMult);
 	logger::info(FMT_STRING(
-					 "  [Damage General] ToPCMult={} ToNPCMult={} PoiseScaling={} WeightContrib={} GauntletWeight={} UnarmedSkill={} PowerAttackMult={}"),
-		Damage.ToPCMult,
-		Damage.ToNPCMult,
-		Damage.PoiseScaling,
-		Damage.WeightContribution,
-		Damage.GauntletWeightContribution,
-		Damage.UnarmedSkillContribution,
+					 "  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} "
+					 "CreatureMult={} MeleeMult={} UnarmedMult={} NormalAttackMult={} PowerAttackMult={}"),
+		Damage.BashMult,
+		Damage.ArrowDamageMult,
+		Damage.BowDrawSpeedMult,
+		Damage.CrossbowMult,
+		Damage.CreatureMult,
+		Damage.MeleeMult,
+		Damage.UnarmedMult,
+		Damage.NormalAttackMult,
 		Damage.PowerAttackMult);
 	logger::info(FMT_STRING("  [Impact Thresholds] Normal={} Powerful={} Seismic={}"),
 		Damage.NormalImpactThreshold, Damage.PowerfulImpactThreshold, Damage.SeismicImpactThreshold);

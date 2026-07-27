@@ -51,15 +51,19 @@ public:
 		}
 	}
 
-	float GetWeaponDamage(RE::TESObjectWEAP* a_weapon);
+	float GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreWeight = false);
+	float CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjectWEAP* weapon);
+	float CalculateProjectileStagger(RE::Actor* aggressor, RE::Projectile* projectile);
+	float ApplyArmorReduction(RE::Actor* target, float stagger);
 	float GetUnarmedDamage(RE::Actor* a_actor);
 	float GetShieldDamage(RE::TESObjectARMO* a_shield);
 	float GetMiscDamage();
-	float ModActorBashMult(RE::Actor* aggressor);
-
+	float ApplyAttackMultiplier(RE::HitData* hitData, float stagger);
+	float CalculateBashStagger(RE::Actor* aggressor);
 	float RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData);
-
-	void PreProcessHit(RE::Actor* target, RE::HitData* hitData);
+	float ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* aggressor, RE::Actor* target, float stagger);
+	bool  IsCreature(RE::Actor* actor);
+	void  PreProcessHit(RE::Actor* target, RE::HitData* hitData);
 
 protected:
 	struct Hooks

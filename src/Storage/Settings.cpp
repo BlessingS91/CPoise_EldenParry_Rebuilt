@@ -188,18 +188,15 @@ void Settings::LoadINI(const wchar_t* a_path)
 		"LogStaggerCalcs",
 		Debug.LogStaggerCalcs);
 
+	Debug.LogActorCalcs = ini.GetBoolValue(
+		"Debug",
+		"LogActorCalcs",
+		Debug.LogActorCalcs);
+
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
 	logger::info(FMT_STRING("  [Health] BaseMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
 		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING("  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
-		Damage.BashMult,
-		Damage.ArrowDamageMult,
-		Damage.BowDrawSpeedMult,
-		Damage.CrossbowMult,
-		Damage.CreatureMult,
-		Damage.MeleeMult,
-		Damage.UnarmedMult);
 	logger::info(FMT_STRING(
 					 "  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} "
 					 "CreatureMult={} MeleeMult={} UnarmedMult={} NormalAttackMult={} PowerAttackMult={}"),
@@ -223,17 +220,12 @@ void Settings::LoadINI(const wchar_t* a_path)
 		TrueHUD.SpecialBarDepletedColor);
 
 	logger::info(FMT_STRING(
-					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={}"),
+					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={} Actors={}"),
 		Debug.LogWeaponCalcs,
 		Debug.LogArmorCalcs,
 		Debug.LogMagicEffectCalcs,
-		Debug.LogStaggerCalcs);
-	logger::info(FMT_STRING(
-					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={}"),
-		Debug.LogWeaponCalcs,
-		Debug.LogArmorCalcs,
-		Debug.LogMagicEffectCalcs,
-		Debug.LogStaggerCalcs);
+		Debug.LogStaggerCalcs,
+		Debug.LogActorCalcs);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)

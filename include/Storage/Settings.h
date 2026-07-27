@@ -95,6 +95,7 @@ public:
 		bool LogArmorCalcs = false;
 		bool LogMagicEffectCalcs = false;
 		bool LogStaggerCalcs = false;
+		bool LogActorCalcs = false;
 	} Debug;
 
 	json JSONSettings;

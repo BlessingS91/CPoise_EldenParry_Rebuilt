@@ -11,57 +11,69 @@
 
 bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 {
-	if (a_actor && a_actor->GetActorRuntimeData().currentProcess && !a_actor->IsChild()) {
-		switch (Settings::GetSingleton()->Modes.StaggerMode) {
-		case 0:
-			return true;
-		case 1:
-			// return !GetBoolVariable(a_actor, "IsStaggering");
-			auto actorState = a_actor->AsActorState();
-			if (!actorState) {
-				return false;
-			}
+	auto settings = Settings::GetSingleton();
 
-			return !actorState->actorState2.staggered;
+	bool result = false;
+
+	if (a_actor && a_actor->GetActorRuntimeData().currentProcess && !a_actor->IsChild()) {
+		switch (settings->Modes.StaggerMode) {
+		case 0:
+			result = true;
+			break;
+
+		case 1:
+			if (auto actorState = a_actor->AsActorState()) {
+				result = !actorState->actorState2.staggered;
+			}
+			break;
 		}
 	}
-	return false;
+
+	if (settings->Debug.LogActorCalcs) {
+		logger::info(
+			FMT_STRING("[CanDamageActor] Actor={} Mode={} Result={}"),
+			a_actor ? a_actor->GetName() : "NULL",
+			settings->Modes.StaggerMode,
+			result);
+	}
+
+	return result;
 }
 
 float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 {
 	auto settings = Settings::GetSingleton();
 
+	if (!a_actor) {
+		return settings->Health.BaseMult;
+	}
+
 	std::string editorID;
 
-	//null safety
 	if (auto race = a_actor->GetRace()) {
 		editorID = race->GetFormEditorID();
 	}
 
-	// Base poise pool
 	float health = settings->Health.BaseMult;
-
 	float mass = 1.0f;
 
-	// Pull custom race mass from JSON if available
-	if (!editorID.empty() && settings->JSONSettings["Races"][editorID] != nullptr) {
-		mass = static_cast<float>(settings->JSONSettings["Races"][editorID]);
+	auto raceMass = settings->JSONSettings["Races"][editorID];
+
+	if (!editorID.empty() && raceMass != nullptr) {
+		mass = static_cast<float>(raceMass);
 	} else {
-		// Otherwise use Skyrim race mass
 		mass = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
 	}
 
 	mass = std::clamp(mass, 0.5f, 10.0f);
 
-	// Final mass factor applied to base poise
 	float massMultiplier = mass * settings->Health.MassMult;
 
 	health *= massMultiplier;
 
-	if (settings->Debug.LogStaggerCalcs && health != settings->Health.BaseMult) {
-		logger::debug(
-			FMT_STRING("[Poise Calc] Actor={} Race={} Base={} Mass={} MassMult={} Final={}"),
+	if (settings->Debug.LogActorCalcs && health != settings->Health.BaseMult) {
+		logger::info(
+			FMT_STRING("[Poise Health Calc] Actor={} Race={} Base={} Mass={} MassMult={} Final={}"),
 			a_actor->GetName(),
 			editorID,
 			settings->Health.BaseMult,
@@ -70,18 +82,212 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 			health);
 	}
 
-	return std::clamp(health, 0.0f, std::numeric_limits<float>::max());
+	return std::max(health, 0.0f);
 }
-
 //For Leonkingzz Elden Parry system, no extra math needed just use GetBaseActorValue calculations.
 float PoiseAV::Score_GetBaseActorValue(RE::Actor* a_actor)
 {
 	return GetBaseActorValue(a_actor);
 }
 
-float PoiseAV::GetActorValueMax([[maybe_unused]] RE::Actor* a_actor)
+float PoiseAV::GetActorValueMax(RE::Actor* a_actor)
+
 {
 	return GetBaseActorValue(a_actor);
+}
+
+bool PoiseAV::IsActorPerformingAction(RE::Actor* a_actor)
+{
+	if (!a_actor) {
+		return false;
+	}
+
+	if (auto actorState = a_actor->AsActorState()) {
+		if (actorState->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone) {
+			return true;
+		}
+	}
+
+	if (!a_actor->Get3D()) {
+		return false;
+	}
+
+	bool isCasting = false;
+
+	a_actor->GetGraphVariableBool("IsInCastState", isCasting);
+
+	if (isCasting) {
+		return true;
+	}
+
+	bool castRight = false;
+	bool castLeft = false;
+	bool castDual = false;
+
+	a_actor->GetGraphVariableBool("IsCastingRight", castRight);
+	a_actor->GetGraphVariableBool("IsCastingLeft", castLeft);
+	a_actor->GetGraphVariableBool("IsCastingDual", castDual);
+
+	return castRight || castLeft || castDual;
+}
+
+float PoiseAV::ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDamage)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (!IsActorPerformingAction(a_target)) {
+		return a_poiseDamage;
+	}
+
+	float beforeDamage = a_poiseDamage;
+
+	a_poiseDamage *= settings->Damage.AttackOfOpportunityMult;
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING("[Attack of Oppourtunity Mult] Target={} Mult={} Before={} After={}"),
+			a_target->GetName(),
+			settings->Damage.AttackOfOpportunityMult,
+			beforeDamage,
+			a_poiseDamage);
+	}
+
+	return a_poiseDamage;
+}
+
+float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (!a_target || !a_aggressor || a_target == a_aggressor || a_poiseDamage <= 0.0f) {
+		return a_poiseDamage;
+	}
+
+	float rawDifficultyMult = settings->GetDamageMultiplier(a_aggressor, a_target);
+
+	float damageMultiplier =
+		1.0f + (rawDifficultyMult - 1.0f) * settings->Damage.PoiseScaling;
+
+	float beforeDamage = a_poiseDamage;
+
+	a_poiseDamage *= damageMultiplier;
+
+	if (a_target->IsPlayerRef()) {
+		a_poiseDamage *= settings->Damage.ToPCMult;
+	} else {
+		a_poiseDamage *= settings->Damage.ToNPCMult;
+	}
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING("[Difficulty Scaling] Target={} Before={} Difficulty={} Scaling={} FinalMult={} After={}"),
+			a_target->GetName(),
+			beforeDamage,
+			rawDifficultyMult,
+			settings->Damage.PoiseScaling,
+			damageMultiplier,
+			a_poiseDamage);
+	}
+
+	return a_poiseDamage;
+}
+
+float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* avManager)
+{
+	if (!a_target || !avManager || a_poiseDamage <= 0.0f) {
+		return 0.0f;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	float maxPoise;
+
+	{
+		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
+		maxPoise = avManager->GetActorValueMax(g_avName, a_target);
+	}
+
+	float poiseDamagePercent = 0.0f;
+
+	if (maxPoise > 0.0f) {
+		poiseDamagePercent = a_poiseDamage / maxPoise;
+	}
+
+	std::string impactType = "None";
+
+	if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
+		poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
+		impactType = "Normal";
+		Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
+
+	} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
+			   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
+		impactType = "Powerful";
+		Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
+
+	} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
+		impactType = "Seismic";
+		Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
+	}
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[Impact Check] Target={} Damage={} Percent={} Impact={} Thresholds={}/{}/{}"),
+			a_target->GetName(),
+			a_poiseDamage,
+			poiseDamagePercent,
+			impactType,
+			settings->Damage.NormalImpactThreshold,
+			settings->Damage.PowerfulImpactThreshold,
+			settings->Damage.SeismicImpactThreshold);
+	}
+	return poiseDamagePercent;
+}
+
+void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, float a_poiseDamagePercent, float a_currentPoise, AVManager* avManager)
+{
+	if (!a_target || !avManager) {
+		return;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	a_target->AddToFaction(ForceFullBodyStagger, 0);
+
+	if (GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
+		return;
+	}
+
+	float safeStaggerMag = std::clamp(a_poiseDamagePercent, 0.0f, 2.0f);
+
+	if (settings->Debug.LogStaggerCalcs) {
+		float maxPoise;
+
+		{
+			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
+			maxPoise = avManager->GetActorValueMax(g_avName, a_target);
+		}
+
+		logger::info(
+			FMT_STRING(
+				"[Poise Break] Target={} "
+				"PoiseDamage={} "
+				"PoiseRemaining={} "
+				"MaxPoise={} "
+				"DamagePercent={} "
+				"StaggerMagnitude={}"),
+			a_target->GetName(),
+			a_poiseDamage,
+			a_currentPoise,
+			maxPoise,
+			a_poiseDamagePercent,
+			safeStaggerMag);
+	}
+
+	TryStagger(a_target, safeStaggerMag, a_aggressor);
+
+	a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
 }
 
 void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, [[maybe_unused]] RE::HitData* a_hitData)
@@ -94,115 +300,43 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	auto avManager = AVManager::GetSingleton();
 
 	float poiseDamagePercent = 0.0f;
+	float initialPoiseDamage = a_poiseDamage;
 
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
 			FMT_STRING("[Poise Damage START] Target={}({:08X}) Aggressor={}({:08X}) IncomingDamage={}"),
-			a_target ? a_target->GetName() : "NULL",
-			a_target ? a_target->GetFormID() : 0,
+			a_target->GetName(),
+			a_target->GetFormID(),
 			a_aggressor ? a_aggressor->GetName() : "NULL",
 			a_aggressor ? a_aggressor->GetFormID() : 0,
 			a_poiseDamage);
 	}
 
-	// Attack checks
-	bool isAttacking = false;
-
-	if (auto actorState = a_target->AsActorState()) {
-		logger::info(
-			"[Poise Debug] ActorState={}",
-			actorState ? "VALID" : "NULL");
-		isAttacking = actorState->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone;
-	}
-
-	bool isCasting = false;
-
-	if (a_target && a_target->Get3D()) {
-		a_target->GetGraphVariableBool("IsInCastState", isCasting);
-	}
-
-	if (!isCasting) {
-		bool castRight = false, castLeft = false, castDual = false;
-		a_target->GetGraphVariableBool("IsCastingRight", castRight);
-		a_target->GetGraphVariableBool("IsCastingLeft", castLeft);
-		a_target->GetGraphVariableBool("IsCastingDual", castDual);
-		isCasting = (castRight || castLeft || castDual);
-	}
 	//Attack of Oppourtunity Mult
-	if (isAttacking || isCasting) {
-		const auto  actionSettings = Settings::GetSingleton();
-		const float actionMultiplier = (actionSettings && actionSettings->Damage.AttackOfOpportunityMult > 0.0f) ? actionSettings->Damage.AttackOfOpportunityMult : 1.5f;
+	a_poiseDamage = ApplyAttackOfOpportunityMult(a_target, a_poiseDamage);
+	float afterAoO = a_poiseDamage;
+	// Difficulty / PC-NPC scaling
+	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
+		a_poiseDamage = ApplyDifficultyScaling(a_target, a_aggressor, a_poiseDamage);
 
-		float beforeActionDamage = a_poiseDamage;
-		a_poiseDamage *= actionMultiplier;
-
-		logger::debug(
-			FMT_STRING("[Poise Multiplier - Action] Target: {} | Attacking: {} | Casting: {} | Mult: {} | Before: {} | After: {}"),
-			a_target->GetName(),
-			isAttacking,
-			isCasting,
-			actionMultiplier,
-			beforeActionDamage,
-			a_poiseDamage);
+		poiseDamagePercent = CheckImpact(a_target, a_poiseDamage, avManager);
 	}
 
-	if (a_poiseDamage > 0.0f && a_target && a_aggressor && a_target != a_aggressor) {
-		// Store base raw multiplier to avoid redundant calls
-		float rawDifficultyMult = settings->GetDamageMultiplier(a_aggressor, a_target);
-		float damageMultiplier = 1.0f + (rawDifficultyMult - 1.0f) * settings->Damage.PoiseScaling;
-
-		logger::debug(
-			FMT_STRING("Poise Scaling: Before={} DifficultyMult={} PoiseScaling={} FinalMult={}"),
-			a_poiseDamage,
-			rawDifficultyMult,
-			settings->Damage.PoiseScaling,
-			damageMultiplier);
-
-		a_poiseDamage *= damageMultiplier;
-
-		if (a_target->IsPlayerRef()) {
-			a_poiseDamage *= settings->Damage.ToPCMult;
-		} else {
-			a_poiseDamage *= settings->Damage.ToNPCMult;
-		}
-
-		// Division-by-zero guard against NaN/Infinity crashes
-		float maxPoise;
-
-		{
-			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-			maxPoise = avManager->GetActorValueMax(g_avName, a_target);
-		}
-		if (maxPoise > 0.0f) {
-			poiseDamagePercent = a_poiseDamage / maxPoise;
-		} else {
-			poiseDamagePercent = 0.0f;
-		}
-
-		if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
-			poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
-			Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
-
-		} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
-				   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
-			Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
-
-		} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
-			Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
-		}
-
-		logger::debug(
-			FMT_STRING("Impact Check: Target={} PoiseDamage={} PoisePercent={} Thresholds[N/P/S]={}/{}/{}"),
+	if (settings->Debug.LogStaggerCalcs) {
+		float finalPoiseDamage = a_poiseDamage;
+		logger::info(
+			FMT_STRING(
+				"[Final Poise Calculation] Target={} Initial={} AfterAoO={} Final={} PercentOfMax={}"),
 			a_target->GetName(),
-			a_poiseDamage,
-			poiseDamagePercent,
-			settings->Damage.NormalImpactThreshold,
-			settings->Damage.PowerfulImpactThreshold,
-			settings->Damage.SeismicImpactThreshold);
+			initialPoiseDamage,
+			afterAoO,
+			finalPoiseDamage,
+			poiseDamagePercent);
 	}
 
-	// Apply incoming poise damage to the target's poise actor value.
+	// Apply final calculated poise damage.
 	a_poiseDamage = std::max(a_poiseDamage, 0.0f);
+
 	{
 		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 		avManager->DamageActorValue(g_avName, a_target, a_poiseDamage);
@@ -217,47 +351,10 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 	// Check if the hit depleted the target's remaining poise.
 	if (poise <= 0.0f) {
-		// Force full-body stagger behavior when poise is broken.
-		a_target->AddToFaction(ForceFullBodyStagger, 0);
-
-		if (!GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
-			// Convert the percentage of poise depleted into stagger strength.
-			// Clamp prevents extreme values from being passed into Skyrim's stagger system.
-			float safeStaggerMag = std::clamp(poiseDamagePercent, 0.0f, 2.0f);
-
-			if (settings->Debug.LogStaggerCalcs) {
-				float maxPoise;
-
-				{
-					std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-					maxPoise = avManager->GetActorValueMax(g_avName, a_target);
-				}
-
-				logger::info(
-					FMT_STRING(
-						"[Poise Break] Target={} "
-						"PoiseDamage={} "
-						"PoiseRemaining={} "
-						"MaxPoise={} "
-						"DamagePercent={} "
-						"StaggerMagnitude={}"),
-					a_target->GetName(),
-					a_poiseDamage,
-					poise,
-					maxPoise,
-					poiseDamagePercent,
-					safeStaggerMag);
-			}
-
-			// Trigger stagger animation from the custom poise system.
-			TryStagger(a_target, safeStaggerMag, a_aggressor);
-
-			// Reset custom graph state after triggering stagger.
-			a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
-		}
+		HandlePoiseBreak(a_target, a_aggressor, a_poiseDamage, poiseDamagePercent, poise, avManager);
 	}
 
-	if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs) {
 		float currentPoise;
 		float maxPoise;
 
@@ -279,69 +376,86 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 {
-	if (a_actor->GetActorRuntimeData().currentProcess && a_actor->GetActorRuntimeData().currentProcess->InHighProcess() && a_actor->Is3DLoaded()) {
-		auto settings = Settings::GetSingleton();
+	auto settings = Settings::GetSingleton();
+	if (!a_actor) {
+		return;
+	}
+	auto& runtime = a_actor->GetActorRuntimeData();
 
-		if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
-			if (!CanDamageActor(a_actor)) {
-				PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(
-					a_actor->GetHandle(),
-					TRUEHUD_API::BarColorType::BarColor,
-					settings->TrueHUD.SpecialBarDepletedColor);
-			} else {
-				PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(
-					a_actor->GetHandle(),
-					TRUEHUD_API::BarColorType::BarColor,
-					settings->TrueHUD.SpecialBarNormalColor);
-			}
-		}
-		auto avManager = AVManager::GetSingleton();
+	if (settings->Debug.LogActorCalcs) {
+		logger::info(
+			FMT_STRING("[Poise Update Check] Actor={} Process={} High={} 3D={}"),
+			a_actor->GetName(),
+			runtime.currentProcess != nullptr,
+			runtime.currentProcess ? runtime.currentProcess->InHighProcess() : false,
+			a_actor->Is3DLoaded());
+	}
 
-		float currentPoise;
-		{
-			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-			currentPoise = avManager->GetActorValue(g_avName, a_actor);
-		}
+	if (!runtime.currentProcess || !runtime.currentProcess->InHighProcess() || !a_actor->Is3DLoaded()) {
+		return;
+	}
 
-		if (currentPoise <= 0.0f) {
-			auto actorState = a_actor->AsActorState();
+	auto* avManager = AVManager::GetSingleton();
+	//auto* settings = Settings::GetSingleton();
 
-			if (actorState && actorState->actorState2.staggered) {
-				float maxPoise;
-				{
-					std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-					maxPoise = avManager->GetActorValueMax(g_avName, a_actor);
-				}
-
-				{
-					std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-					avManager->RestoreActorValue(g_avName, a_actor, maxPoise);
-				}
-
-				if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
-					PoiseAVHUD::trueHUDInterface->FlashActorSpecialBar(SKSE::GetPluginHandle(), a_actor->GetHandle(), true);
-				}
-				RemoveFromFaction(a_actor, ForceFullBodyStagger);
-			} else {
-				if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
-					TryStagger(a_actor, 0.5f, nullptr);
-					a_actor->SetGraphVariableBool("bPoise_IsStaggered", false);
-				}
-			}
+	if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
+		if (!CanDamageActor(a_actor)) {
+			PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(
+				a_actor->GetHandle(),
+				TRUEHUD_API::BarColorType::BarColor,
+				settings->TrueHUD.SpecialBarDepletedColor);
 		} else {
-			// Delta-time scaled regen point calculation
+			PoiseAVHUD::trueHUDInterface->OverrideSpecialBarColor(
+				a_actor->GetHandle(),
+				TRUEHUD_API::BarColorType::BarColor,
+				settings->TrueHUD.SpecialBarNormalColor);
+		}
+	}
+
+	float currentPoise;
+	{
+		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
+		currentPoise = avManager->GetActorValue(g_avName, a_actor);
+	}
+
+	if (currentPoise <= 0.0f) {
+		auto actorState = a_actor->AsActorState();
+
+		if (actorState && actorState->actorState2.staggered) {
 			float maxPoise;
 			{
 				std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 				maxPoise = avManager->GetActorValueMax(g_avName, a_actor);
 			}
 
-			float regenAmount = maxPoise * settings->Health.RegenRate * a_delta;
-
 			{
 				std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-				avManager->RestoreActorValue(g_avName, a_actor, regenAmount);
+				avManager->RestoreActorValue(g_avName, a_actor, maxPoise);
 			}
+
+			if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {
+				PoiseAVHUD::trueHUDInterface->FlashActorSpecialBar(SKSE::GetPluginHandle(), a_actor->GetHandle(), true);
+			}
+			RemoveFromFaction(a_actor, ForceFullBodyStagger);
+		} else {
+			if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
+				TryStagger(a_actor, 0.5f, nullptr);
+				a_actor->SetGraphVariableBool("bPoise_IsStaggered", false);
+			}
+		}
+	} else {
+		// Delta-time scaled regen point calculation
+		float maxPoise;
+		{
+			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
+			maxPoise = avManager->GetActorValueMax(g_avName, a_actor);
+		}
+
+		float regenAmount = maxPoise * settings->Health.RegenRate * a_delta;
+
+		{
+			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
+			avManager->RestoreActorValue(g_avName, a_actor, regenAmount);
 		}
 	}
 }

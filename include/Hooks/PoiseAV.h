@@ -2,17 +2,16 @@
 
 #include "ActorValues/AVInterface.h"
 #include "FormUtil.h"
+class AVManager;
 
 //static float* g_deltaTime = (float*)RELOCATION_ID(523660, 410199).address();          // 2F6B948, 30064C8
 //static float* g_deltaTimeRealTime = (float*)RELOCATION_ID(523661, 410200).address();  // 2F6B94C, 30064CC
 
 static float& g_deltaTime = (*(float*)RELOCATION_ID(523660, 410199).address());
 
-class PoiseAV : public AVInterface  
+class PoiseAV : public AVInterface
 {
 public:
-    
-
 	static void InstallHooks()
 	{
 		Hooks::Install();
@@ -30,6 +29,11 @@ public:
 	float GetBaseActorValue(RE::Actor* a_actor);
 	float Score_GetBaseActorValue(RE::Actor* a_actor);
 	float GetActorValueMax(RE::Actor* a_actor);
+	bool  IsActorPerformingAction(RE::Actor* a_actor);
+	float ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDamage);
+	float ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage);
+	float CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* avManager);
+	void  HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, float a_poiseDamagePercent, float a_poise, AVManager* avManager);
 	void  DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, RE::HitData* a_hitData = nullptr);
 	void  Update(RE::Actor* a_actor, float a_delta);
 	void  GarbageCollection();
@@ -118,7 +122,6 @@ public:
 	//	a_target->actorState2.staggered = true;
 	//}
 
-
 	// if(a_aggressor){
 	// 	auto headingAngle = a_target->GetHeadingAngle(a_aggressor->GetPosition(), false);
 	// 	auto direction = (headingAngle >= 0.0f) ? headingAngle / 360.0f : (360.0f + headingAngle) / 360.0f;
@@ -128,7 +131,6 @@ public:
 	// a_target->SetGraphVariableFloat("staggerMagnitude", a_staggerMult);
 
 	// a_target->NotifyAnimationGraph("staggerStart");
-	
 
 	static void TryStagger(RE::Actor* a_target, float a_staggerMult, RE::Actor* a_aggressor)
 	{
@@ -140,8 +142,6 @@ public:
 		REL::Relocation<func_t> func{ REL::RelocationID(36700, 37710) };
 		func(a_target, a_staggerMult, a_aggressor);
 
-		
-
 		// if(a_aggressor){
 		// 	logger::info(" Stagger function triggered. Victim: {}  Aggressor: {}", a_target->GetName(), a_aggressor->GetName());
 
@@ -150,14 +150,12 @@ public:
 		// }
 	}
 
-	static bool GetBoolVariable(RE::Actor *a_actor, std::string a_string)
+	static bool GetBoolVariable(RE::Actor* a_actor, std::string a_string)
 	{
 		auto result = false;
 		a_actor->GetGraphVariableBool(a_string, result);
 		return result;
 	}
-
-
 
 	static void RemoveFromFaction(RE::Actor* a_actor, RE::TESFaction* a_faction)
 	{

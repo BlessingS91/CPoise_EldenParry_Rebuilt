@@ -1,8 +1,8 @@
 #include "Events/Events.h"
 
 #include "ActorValues/AVManager.h"
+#include "Hooks/HitEventHandler.h"
 #include "Hooks/PoiseAV.h"
-
 
 void Events::Register()
 {
@@ -10,7 +10,6 @@ void Events::Register()
 	fastTravelEventHandler::Register();
 	waitEventHandler::Register();
 }
-
 
 bool cellLoadEventHandler::Register()
 {
@@ -29,13 +28,23 @@ bool cellLoadEventHandler::Register()
 	return true;
 }
 
-RE::BSEventNotifyControl cellLoadEventHandler::ProcessEvent(const RE::TESCellFullyLoadedEvent*, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*)
+RE::BSEventNotifyControl cellLoadEventHandler::ProcessEvent(
+	const RE::TESCellFullyLoadedEvent*,
+	RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*)
 {
 	auto poiseAV = PoiseAV::GetSingleton();
 	poiseAV->GarbageCollection();
+
+	static bool initialized = false;
+
+	if (!initialized) {
+		logger::info("Initializing HitEventHandler weapon cache...");
+		HitEventHandler::GetSingleton()->InitializeWeapons();
+		initialized = true;
+	}
+
 	return RE::BSEventNotifyControl::kContinue;
 }
-
 
 bool fastTravelEventHandler::Register()
 {
@@ -60,7 +69,6 @@ RE::BSEventNotifyControl fastTravelEventHandler::ProcessEvent(const RE::TESFastT
 	avManager->Revert();
 	return RE::BSEventNotifyControl::kContinue;
 }
-
 
 bool waitEventHandler::Register()
 {

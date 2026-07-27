@@ -17,3 +17,9 @@ target_compile_options(ChocolatePoise PRIVATE
 add_compile_definitions(
     _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
 )
+
+add_custom_command(TARGET ChocolatePoise POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    "$<TARGET_FILE:ChocolatePoise>"
+    "E:/ModLists/Skyrim Modding Setup/mods/Chocolate Poise - Reforged/skse/plugins/"
+)

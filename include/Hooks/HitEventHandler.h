@@ -14,22 +14,41 @@ public:
 
 	static void InstallHooks()
 	{
-		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (dataHandler) {
-			auto minWeap = RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("IronDagger");
-			auto maxWeap = RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("DaedricWarhammer");
-
-			auto instance = GetSingleton();
-			instance->_minWeapon = minWeap;
-			instance->_maxWeapon = maxWeap;
-
-			if (!minWeap || !maxWeap) {
-				logger::error("Failed to resolve baseline weapons (IronDagger or DaedricWarhammer)!");
-			} else {
-				logger::info("Baseline weapons successfully cached for scaling curve.");
-			}
-		}
+		logger::info("Installing HitEventHandler hooks...");
 		Hooks::Install();
+	}
+
+	void InitializeWeapons()
+	{
+		logger::info("Initializing weapon cache...");
+
+		auto instance = GetSingleton();
+
+		instance->_minWeapon =
+			RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("IronDagger");
+
+		instance->_maxWeapon =
+			RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("DaedricWarhammer");
+
+		if (instance->_minWeapon) {
+			logger::info(
+				"[Weapon Cache Min] Name={} Damage={} Weight={}",
+				instance->_minWeapon->GetName(),
+				instance->_minWeapon->GetAttackDamage(),
+				instance->_minWeapon->GetWeight());
+		} else {
+			logger::info("[Weapon Cache Min] NULL");
+		}
+
+		if (instance->_maxWeapon) {
+			logger::info(
+				"[Weapon Cache Max] Name={} Damage={} Weight={}",
+				instance->_maxWeapon->GetName(),
+				instance->_maxWeapon->GetAttackDamage(),
+				instance->_maxWeapon->GetWeight());
+		} else {
+			logger::info("[Weapon Cache Max] NULL");
+		}
 	}
 
 	float GetWeaponDamage(RE::TESObjectWEAP* a_weapon);

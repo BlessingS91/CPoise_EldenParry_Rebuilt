@@ -17,7 +17,7 @@ def calculate_weapon_poise(
     - Armor Rescaled style curve strength (2.5)
     - Higher minimum poise floor (25)
     - Higher maximum poise ceiling (75)
-    - Weight contributes meaningful stagger authority (0.010)
+    - Weapon weight contributes stagger authority
     """
 
     max_damage *= max_multiplier
@@ -28,10 +28,9 @@ def calculate_weapon_poise(
         return min_poise
 
     normalized_damage = (weapon_damage - min_damage) / damage_range
-
     normalized_damage = max(0.0, min(1.0, normalized_damage))
 
-    # Armor Rating Rescaled style diminishing return curve
+    # ARR style diminishing return curve
     r1 = normalized_damage * damage_curve
     r2 = r1 / (1.0 + r1)
 
@@ -41,10 +40,62 @@ def calculate_weapon_poise(
     base_poise_factor = r2 + weight_factor
     base_poise_factor = max(0.0, min(1.0, base_poise_factor))
 
-    # Map curve output into poise damage range
     final_value = min_poise + (base_poise_factor * (max_poise - min_poise))
 
     return max(0.0, min(200.0, final_value * weapon_mult))
+
+
+def calculate_bow_poise(
+    bow_damage,
+    arrow_damage,
+    bow_mult=1.0,
+    arrow_contrib=0.05,
+    min_damage=4.0,
+    max_damage=27.0,
+    max_multiplier=7.0,
+    damage_curve=2.5,
+    min_poise=25.0,
+    max_poise=75.0,
+):
+    """
+    Bow poise scaling.
+
+    Bow:
+    - Uses the normal weapon damage curve.
+    - Represents the main impact force.
+
+    Arrow:
+    - Acts like weapon weight.
+    - Adds a small projectile impact bonus.
+    - Prevents all bows from reaching the same maximum value.
+
+    arrow_contrib controls arrow importance.
+    """
+
+    max_damage *= max_multiplier
+
+    damage_range = max_damage - min_damage
+
+    if damage_range <= 0:
+        return min_poise
+
+    # Bow damage scaling
+    normalized_damage = (bow_damage - min_damage) / damage_range
+    normalized_damage = max(0.0, min(1.0, normalized_damage))
+
+    # ARR style curve
+    r1 = normalized_damage * damage_curve
+    r2 = r1 / (1.0 + r1)
+
+    # Arrow impact contribution
+    arrow_factor = arrow_damage * arrow_contrib
+
+    base_poise_factor = r2 + arrow_factor
+    base_poise_factor = max(0.0, min(1.0, base_poise_factor))
+
+    final_value = min_poise + (base_poise_factor * (max_poise - min_poise))
+
+    return max(0.0, min(200.0, final_value * bow_mult))
 
 
 def calculate_armor_reduction(
@@ -91,6 +142,14 @@ weapons = [
 ]
 
 
+bows = [
+    ("Hunting Bow + Iron Arrow", 7, 10),
+    ("Elven Bow + Elven Arrow", 13, 16),
+    ("Ebony Bow + Ebony Arrow", 17, 20),
+    ("Daedric Bow + Daedric Arrow", 19, 24),
+]
+
+
 armor_values = [
     0,
     100,
@@ -103,8 +162,8 @@ armor_values = [
 ]
 
 
-print("Weapon Poise System - 100 Poise Baseline")
-print("========================================")
+print("Weapon Poise System")
+print("===================")
 
 for name, damage, weight, mult in weapons:
 
@@ -118,7 +177,27 @@ for name, damage, weight, mult in weapons:
     for armor in armor_values:
 
         reduction = calculate_armor_reduction(armor)
+        final = apply_armor(raw, armor)
 
+        print(f" {armor:4} AR " f"({reduction*100:5.1f}% reduction): " f"{final:.2f}")
+
+
+print("\n\nBow Poise System")
+print("================")
+
+for name, bow_damage, arrow_damage in bows:
+
+    raw = calculate_bow_poise(bow_damage, arrow_damage)
+
+    print(f"\n{name}")
+    print(
+        f" Raw Poise Damage: {raw:.2f} "
+        f"(Arrow Contribution: {arrow_damage * 0.25:.2f})"
+    )
+
+    for armor in armor_values:
+
+        reduction = calculate_armor_reduction(armor)
         final = apply_armor(raw, armor)
 
         print(f" {armor:4} AR " f"({reduction*100:5.1f}% reduction): " f"{final:.2f}")

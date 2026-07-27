@@ -47,41 +47,52 @@ public:
 
 	struct
 	{
-		float BaseMult{ 50 };
-		float MassMult{ 0.050f };
-		float ArmorMult{ 0.25 };
-		float ArmorMultMin = 0.25f;
-		float RegenRate{ 0.050f };
+		float BaseMult{ 100.0f };
+		float MassMult{ 1.0f };
+		float ArmorMult{ 0.020f };
+		float ArmorMultMin{ 0.35f };
+		float RegenRate{ 0.045f };
 	} Health;
 
 	struct
 	{
-		float BashMult{ 0.001 };
-		float BowMult{ 1.0 };
-		float CreatureMult{ 2.0 };
-		float MeleeMult{ 1.0 };
-		float UnarmedMult{ 2.0 };
+		float BashMult{ 1.0f };
+		float ArrowContribution{ 0.05f };
+		float CreatureMult{ 1.5f };
+		float MeleeMult{ 1.0f };
+		float UnarmedMult{ 1.0f };
+		float PowerAttackMult{ 1.0f };
 
-		float ToPCMult{ 1.0 };
-		float ToNPCMult{ 1.0 };
+		float ToPCMult{ 1.0f };
+		float ToNPCMult{ 1.0f };
 
-		float PoiseScaling{ 1.0 };
+		float PoiseScaling{ 0.25f };
 
-		float WeightContribution{ 2.0 };
-		float GauntletWeightContribution{ 1.0 };
-		float UnarmedSkillContribution{ 0.2 };
-		float AttackOfOpportunityMult{ 0.25f };
+		float WeightContribution{ 0.005f };
+		float GauntletWeightContribution{ 0.05f };
+		float UnarmedSkillContribution{ 0.4f };
+		float AttackOfOpportunityMult{ 1.5f };
 
-		float NormalImpactThreshold{ 0.10f };
-		float PowerfulImpactThreshold{ 0.25f };
-		float SeismicImpactThreshold{ 0.50f };
+		float NormalImpactThreshold{ 0.25f };
+		float PowerfulImpactThreshold{ 0.50f };
+		float SeismicImpactThreshold{ 0.75f };
 
 	} Damage;
 
 	struct
 	{
-		bool SpecialBar{ true };
+		bool     SpecialBar{ true };
+		uint32_t SpecialBarNormalColor{ 0xFFFF00 };    // Normal poise bar color
+		uint32_t SpecialBarDepletedColor{ 0x808080 };  // Poise depleted color
 	} TrueHUD;
+
+	struct DebugSettings
+	{
+		bool LogWeaponCalcs = false;
+		bool LogArmorCalcs = false;
+		bool LogMagicEffectCalcs = false;
+		bool LogStaggerCalcs = false;
+	} Debug;
 
 	json JSONSettings;
 

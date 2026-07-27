@@ -88,8 +88,10 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.BashMult = static_cast<float>(
 		ini.GetValue("Damage", "BashMult", nullptr) ? ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult) : ini.GetDoubleValue("Damage Settings", "Bash Mult", Damage.BashMult));
 
-	Damage.BowMult = static_cast<float>(
-		ini.GetValue("Damage", "BowMult", nullptr) ? ini.GetDoubleValue("Damage", "BowMult", Damage.BowMult) : ini.GetDoubleValue("Damage Settings", "Bow Mult", Damage.BowMult));
+	Damage.ArrowContribution = static_cast<float>(
+		ini.GetValue("Damage", "ArrowContribution", nullptr) ?
+			ini.GetDoubleValue("Damage", "ArrowContribution", Damage.ArrowContribution) :
+			ini.GetDoubleValue("Damage Settings", "Arrow Contribution", Damage.ArrowContribution));
 
 	Damage.CreatureMult = static_cast<float>(
 		ini.GetValue("Damage", "CreatureMult", nullptr) ? ini.GetDoubleValue("Damage", "CreatureMult", Damage.CreatureMult) : ini.GetDoubleValue("Damage Settings", "Creature Mult", Damage.CreatureMult));
@@ -99,6 +101,9 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	Damage.UnarmedMult = static_cast<float>(
 		ini.GetValue("Damage", "UnarmedMult", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedMult", Damage.UnarmedMult) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Damage Mult", Damage.UnarmedMult));
+
+	Damage.PowerAttackMult = static_cast<float>(
+		ini.GetValue("Damage", "PowerAttackMult", nullptr) ? ini.GetDoubleValue("Damage", "PowerAttackMult", Damage.PowerAttackMult) : ini.GetDoubleValue("Damage Settings", "Power Attack Mult", Damage.PowerAttackMult));
 
 	Damage.ToPCMult = static_cast<float>(
 		ini.GetValue("Damage", "ToPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToPCMult", Damage.ToPCMult) : ini.GetDoubleValue("General Damage Settings", "Player Multiplier", Damage.ToPCMult));
@@ -118,7 +123,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.UnarmedSkillContribution = static_cast<float>(
 		ini.GetValue("Damage", "UnarmedSkillContribution", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Skill Contribution", Damage.UnarmedSkillContribution));
 
-	Damage.AttackOfOpportunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOpportunityMult ", 1.5));
+	Damage.AttackOfOpportunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOpportunityMult", 1.5));
 
 	// Impact Thresholds
 	Damage.NormalImpactThreshold = static_cast<float>(
@@ -139,18 +144,74 @@ void Settings::LoadINI(const wchar_t* a_path)
 		TrueHUD.SpecialBar = false;
 	}
 
+	auto normalColor = ini.GetValue("TrueHUD", "SpecialBarNormalColor", nullptr);
+	if (normalColor) {
+		TrueHUD.SpecialBarNormalColor = std::stoul(normalColor, nullptr, 16);
+	}
+
+	auto depletedColor = ini.GetValue("TrueHUD", "SpecialBarDepletedColor", nullptr);
+	if (depletedColor) {
+		TrueHUD.SpecialBarDepletedColor = std::stoul(depletedColor, nullptr, 16);
+	}
+
+	// Debug
+	Debug.LogWeaponCalcs = ini.GetBoolValue(
+		"Debug",
+		"LogWeaponCalcs",
+		Debug.LogWeaponCalcs);
+
+	Debug.LogArmorCalcs = ini.GetBoolValue(
+		"Debug",
+		"LogArmorCalcs",
+		Debug.LogArmorCalcs);
+
+	Debug.LogMagicEffectCalcs = ini.GetBoolValue(
+		"Debug",
+		"LogMagicEffectCalcs",
+		Debug.LogMagicEffectCalcs);
+
+	Debug.LogStaggerCalcs = ini.GetBoolValue(
+		"Debug",
+		"LogStaggerCalcs",
+		Debug.LogStaggerCalcs);
+
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
 	logger::info(FMT_STRING("  [Health] BaseMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
 		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING("  [Damage] BashMult={} BowMult={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
-		Damage.BashMult, Damage.BowMult, Damage.CreatureMult, Damage.MeleeMult, Damage.UnarmedMult);
-	logger::info(FMT_STRING("  [Damage General] ToPCMult={} ToNPCMult={} PoiseScaling={} WeightContrib={} GauntletWeight={} UnarmedSkill={}"),
-		Damage.ToPCMult, Damage.ToNPCMult, Damage.PoiseScaling, Damage.WeightContribution, Damage.GauntletWeightContribution, Damage.UnarmedSkillContribution);
+	logger::info(FMT_STRING("  [Damage] BashMult={} ArrowContribution={} CreatureMult={} MeleeMult={} UnarmedMult={}"),
+		Damage.BashMult, Damage.ArrowContribution, Damage.CreatureMult, Damage.MeleeMult, Damage.UnarmedMult);
+	logger::info(FMT_STRING(
+					 "  [Damage General] ToPCMult={} ToNPCMult={} PoiseScaling={} WeightContrib={} GauntletWeight={} UnarmedSkill={} PowerAttackMult={}"),
+		Damage.ToPCMult,
+		Damage.ToNPCMult,
+		Damage.PoiseScaling,
+		Damage.WeightContribution,
+		Damage.GauntletWeightContribution,
+		Damage.UnarmedSkillContribution,
+		Damage.PowerAttackMult);
 	logger::info(FMT_STRING("  [Impact Thresholds] Normal={} Powerful={} Seismic={}"),
 		Damage.NormalImpactThreshold, Damage.PowerfulImpactThreshold, Damage.SeismicImpactThreshold);
 	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),
 		TrueHUD.SpecialBar, ignoreValhalla);
+
+	logger::info(FMT_STRING(
+					 "  [TrueHUD Colors] Normal=0x{:X} Depleted=0x{:X}"),
+		TrueHUD.SpecialBarNormalColor,
+		TrueHUD.SpecialBarDepletedColor);
+
+	logger::info(FMT_STRING(
+					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={}"),
+		Debug.LogWeaponCalcs,
+		Debug.LogArmorCalcs,
+		Debug.LogMagicEffectCalcs,
+		Debug.LogStaggerCalcs);
+	logger::info(FMT_STRING(
+					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={}"),
+		Debug.LogWeaponCalcs,
+		Debug.LogArmorCalcs,
+		Debug.LogMagicEffectCalcs,
+		Debug.LogStaggerCalcs);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)

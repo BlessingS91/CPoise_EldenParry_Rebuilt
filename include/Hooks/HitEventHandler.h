@@ -44,6 +44,28 @@ public:
 		instance->_maxShield =
 			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricShield");
 
+		instance->_maxArmorHelmet =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricHelmet");
+
+		instance->_maxArmorCuirass =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricCuirass");
+
+		instance->_maxArmorBoots =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricBoots");
+
+		instance->_maxArmorGauntlets =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricGauntlets");
+
+		instance->_maxArmorShield =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricShield");
+
+		instance->_maxArmorRating =
+			(instance->_maxArmorHelmet ? instance->_maxArmorHelmet->GetArmorRating() : 0.0f) +
+			(instance->_maxArmorCuirass ? instance->_maxArmorCuirass->GetArmorRating() : 0.0f) +
+			(instance->_maxArmorBoots ? instance->_maxArmorBoots->GetArmorRating() : 0.0f) +
+			(instance->_maxArmorGauntlets ? instance->_maxArmorGauntlets->GetArmorRating() : 0.0f) +
+			(instance->_maxArmorShield ? instance->_maxArmorShield->GetArmorRating() : 0.0f);
+
 		// Weapon Cache Logging
 		if (instance->_minWeapon) {
 			logger::info(
@@ -106,6 +128,34 @@ public:
 			logger::error("[Shield Cache Max] NULL");
 		}
 
+		// Armor Cache Logging
+		auto logArmor = [](const char* slot, RE::TESObjectARMO* armor) {
+			if (armor) {
+				logger::info(
+					"[Armor Cache] Slot={} Name={} ArmorRating={} Weight={}",
+					slot,
+					armor->GetName(),
+					armor->GetArmorRating(),
+					armor->GetWeight());
+			} else {
+				logger::error(
+					"[Armor Cache] Slot={} NULL",
+					slot);
+			}
+		};
+
+		logArmor("Helmet", instance->_maxArmorHelmet);
+		logArmor("Cuirass", instance->_maxArmorCuirass);
+		logArmor("Boots", instance->_maxArmorBoots);
+		logArmor("Gauntlets", instance->_maxArmorGauntlets);
+		logArmor("Shield", instance->_maxArmorShield);
+
+		logger::info(
+			"[Equipment Reference] MaxArmorRating={} ReferenceMultiplier={} EffectiveReference={}",
+			instance->_maxArmorRating,
+			Settings::GetSingleton()->Global.EquipmentReferenceMultiplier,
+			instance->_maxArmorRating * Settings::GetSingleton()->Global.EquipmentReferenceMultiplier);
+
 		// ==========================
 		// Weapon Multiplier Cache
 		// ==========================
@@ -140,13 +190,17 @@ public:
 	float CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjectWEAP* weapon);
 	float CalculateProjectileStagger(RE::Actor* aggressor, RE::Projectile* projectile);
 	float ApplyArmorReduction(RE::Actor* target, float stagger);
+
+	float GetShieldDamage(RE::Actor* a_actor);
+	bool  IsShieldStrike(RE::Actor* actor, RE::HitData* hitData);
+
 	float GetUnarmedDamage(RE::Actor* a_actor);
 	float GetBashDamage(RE::TESObjectARMO* a_shield);
 	float GetMiscDamage();
 	float ApplyAttackMultiplier(RE::HitData* hitData, float stagger);
 	float CalculateBashStagger(RE::Actor* aggressor);
 	float RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData);
-	float ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* aggressor, RE::Actor* target, float stagger);
+	float ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* target, float stagger);
 	bool  IsCreature(RE::Actor* actor);
 	void  PreProcessHit(RE::Actor* target, RE::HitData* hitData);
 
@@ -184,6 +238,15 @@ private:
 	// Shield bash scaling baseline
 	RE::TESObjectARMO* _minShield{ nullptr };
 	RE::TESObjectARMO* _maxShield{ nullptr };
+
+	// Armor poise scaling baseline
+	RE::TESObjectARMO* _maxArmorHelmet{ nullptr };
+	RE::TESObjectARMO* _maxArmorCuirass{ nullptr };
+	RE::TESObjectARMO* _maxArmorBoots{ nullptr };
+	RE::TESObjectARMO* _maxArmorGauntlets{ nullptr };
+	RE::TESObjectARMO* _maxArmorShield{ nullptr };
+
+	float _maxArmorRating{ 0.0f };
 
 	// Cached JSON weapon multipliers
 	std::unordered_map<std::string, float> _weaponMultiplierCache;

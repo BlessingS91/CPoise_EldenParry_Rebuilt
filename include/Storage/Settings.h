@@ -55,17 +55,22 @@ public:
 	// ==========================
 	struct
 	{
-		float BaseMult{ 100.0f };
+		float BaseHealth{ 100.0f };
 
 		float MassMult{ 1.0f };
-
-		float ArmorMult{ 0.020f };
-
-		float ArmorMultMin{ 0.35f };
 
 		float RegenRate{ 0.045f };
 
 	} Health;
+
+	// ==========================
+	// Armor Calculations
+	// ==========================
+	struct
+	{
+		float ArmorMult{ 0.020f };
+
+	} Armor;
 
 	// ==========================
 	// Weapon Damage
@@ -81,10 +86,6 @@ public:
 		float ArrowDamageMult{ 0.25f };
 
 		float CrossbowMult{ 1.15f };
-
-		// Maximum weapon damage reference multiplier
-		// Higher values make weapon damage scale slower
-		float MaxDamageMultiplier{ 5.0f };
 
 	} Weapon;
 
@@ -111,10 +112,6 @@ public:
 		// Skill used for scaling
 		// 0=None, 1=OneHanded, 2=TwoHanded, ...
 		int SkillType{ 0 };
-
-		// Maximum gauntlet armor reference multiplier
-		// Higher values make armor contribution scale slower
-		float MaxArmorMultiplier{ 5.0f };
 
 	} Unarmed;
 
@@ -148,10 +145,6 @@ public:
 
 		// How much shield weight contributes to poise damage
 		float WeightContribution{ 0.15f };
-
-		// Maximum shield armor reference multiplier
-		// Higher values make armor contribution scale slower
-		float MaxArmorMultiplier{ 5.0f };
 
 	} Shield;
 
@@ -195,12 +188,13 @@ public:
 
 		float ToNPCMult{ 1.0f };
 
-		// How much Skyrim difficulty damage multipliers affect poise damage
-		// 0.0 = ignore difficulty
-		// 0.25 = mild difficulty influence
-		// 0.5 = moderate difficulty influence
-		// 1.0 = full difficulty scaling
 		float DifficultyScaling{ 0.25f };
+
+		float WeaponScalingCurve{ 2.5f };
+
+		float ArmorScalingCurve{ 2.5f };
+
+		float EquipmentReferenceMultiplier{ 5.0f };
 
 	} Global;
 
@@ -211,9 +205,9 @@ public:
 	{
 		float Normal{ 0.25f };
 
-		float Powerful{ 0.50f };
+		float Large{ 0.50f };
 
-		float Seismic{ 0.75f };
+		float Massive{ 0.75f };
 
 	} Impact;
 

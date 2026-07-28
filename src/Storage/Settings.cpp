@@ -97,12 +97,13 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// Modes
 	Modes.StaggerMode = static_cast<int>(ini.GetLongValue("Modes", "StaggerMode", Modes.StaggerMode));
 
-	// Health
-	Health.BaseMult = getFloatVal("Health", "BaseMult", "Health Settings", "Base Mult", Health.BaseMult);
+	// Poise Health
+	Health.BaseHealth = getFloatVal("Health", "BaseHealth", "Health Settings", "Base Health", Health.BaseHealth);
 	Health.MassMult = getFloatVal("Health", "MassMult", "Health Settings", "Mass Mult", Health.MassMult);
-	Health.ArmorMult = getFloatVal("Health", "ArmorMult", "Health Settings", "Armor Mult", Health.ArmorMult);
-	Health.ArmorMultMin = getFloatVal("Health", "ArmorMultMin", "Health Settings", "Armor Mult Min", Health.ArmorMultMin);
 	Health.RegenRate = getFloatVal("Health", "RegenRate", "Health Settings", "Regen Rate", Health.RegenRate);
+
+	// Armor Calculations
+	Armor.ArmorMult = getFloatVal("Armor", "ArmorMult", "Armor Settings", "Armor Mult", Armor.ArmorMult);
 
 	// Weapon Damage
 	Weapon.MeleeMult = getFloatVal("Weapon", "MeleeMult", "Damage Settings", "Melee Mult", Weapon.MeleeMult);
@@ -110,13 +111,6 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Weapon.BowDrawSpeedMult = getFloatVal("Weapon", "BowDrawSpeedMult", "Damage Settings", "Bow Draw Speed Mult", Weapon.BowDrawSpeedMult);
 	Weapon.ArrowDamageMult = getFloatVal("Weapon", "ArrowDamageMult", "Damage Settings", "Arrow Damage Mult", Weapon.ArrowDamageMult);
 	Weapon.CrossbowMult = getFloatVal("Weapon", "CrossbowMult", "Damage Settings", "Crossbow Mult", Weapon.CrossbowMult);
-	Weapon.MaxDamageMultiplier =
-		getFloatVal(
-			"Weapon",
-			"MaxDamageMultiplier",
-			"Damage Settings",
-			"Max Damage Multiplier",
-			Weapon.MaxDamageMultiplier);
 
 	// Unarmed Damage
 	Unarmed.ArmorContribution =
@@ -166,14 +160,6 @@ void Settings::LoadINI(const wchar_t* a_path)
 				"SkillType",
 				Unarmed.SkillType));
 
-	Unarmed.MaxArmorMultiplier =
-		getFloatVal(
-			"Unarmed",
-			"MaxArmorMultiplier",
-			"Unarmed Damage Settings",
-			"Max Armor Multiplier",
-			Unarmed.MaxArmorMultiplier);
-
 	// Creature Damage
 	Creature.DamageMultiplier = getFloatVal("Creature", "DamageMultiplier", "Damage Settings", "Creature Damage Multiplier", Creature.DamageMultiplier);
 
@@ -181,7 +167,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Blocking.BashMult = getFloatVal("Blocking", "BashMult", "Damage Settings", "Bash Mult", Blocking.BashMult);
 	Blocking.BlockingMult = getFloatVal("Blocking", "BlockingMult", "General Damage Settings", "Blocking Multiplier", Blocking.BlockingMult);
 
-	// Shields
+	// Shield Damage
 	Shield.ArmorContribution =
 		getFloatVal(
 			"Shield",
@@ -198,14 +184,6 @@ void Settings::LoadINI(const wchar_t* a_path)
 			"Weight Contribution",
 			Shield.WeightContribution);
 
-	Shield.MaxArmorMultiplier =
-		getFloatVal(
-			"Shield",
-			"MaxArmorMultiplier",
-			"Shield Settings",
-			"Max Armor Multiplier",
-			Shield.MaxArmorMultiplier);
-
 	// Attack Modifiers
 	Attack.NormalAttackMult = getFloatVal("Attack", "NormalAttackMult", "Damage Settings", "Normal Attack Mult", Attack.NormalAttackMult);
 	Attack.PowerAttackMult = getFloatVal("Attack", "PowerAttackMult", "Damage Settings", "Power Attack Mult", Attack.PowerAttackMult);
@@ -220,17 +198,35 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// NPC / Player Multipliers
 	Global.ToPCMult = getFloatVal("Global", "ToPCMult", "General Damage Settings", "Player Multiplier", Global.ToPCMult);
 	Global.ToNPCMult = getFloatVal("Global", "ToNPCMult", "General Damage Settings", "NPC Multiplier", Global.ToNPCMult);
-	// Difficulty Scaling Influence
 	Global.DifficultyScaling = getFloatVal(
 		"Global",
 		"DifficultyScaling",
 		"General Damage Settings",
 		"Difficulty Scaling",
 		Global.DifficultyScaling);
+	Global.WeaponScalingCurve = getFloatVal(
+		"Global",
+		"WeaponScalingCurve",
+		"General Damage Settings",
+		"Weapon Scaling Curve",
+		Global.WeaponScalingCurve);
+	Global.ArmorScalingCurve = getFloatVal(
+		"Global",
+		"ArmorScalingCurve",
+		"General Damage Settings",
+		"Armor Scaling Curve",
+		Global.ArmorScalingCurve);
+	Global.EquipmentReferenceMultiplier = getFloatVal(
+		"Global",
+		"EquipmentReferenceMultiplier",
+		"General Damage Settings",
+		"Equipment Reference Multiplier",
+		Global.EquipmentReferenceMultiplier);
+
 	// Impact Thresholds
 	Impact.Normal = getFloatVal("Impact Thresholds", "Normal", "Impact Thresholds", "Normal Impact", Impact.Normal);
-	Impact.Powerful = getFloatVal("Impact Thresholds", "Powerful", "Impact Thresholds", "Powerful Impact", Impact.Powerful);
-	Impact.Seismic = getFloatVal("Impact Thresholds", "Seismic", "Impact Thresholds", "Seismic Impact", Impact.Seismic);
+	Impact.Large = getFloatVal("Impact Thresholds", "Large", "Impact Thresholds", "Large Impact", Impact.Large);
+	Impact.Massive = getFloatVal("Impact Thresholds", "Massive", "Impact Thresholds", "Massive Impact", Impact.Massive);
 
 	// TrueHUD Integration
 	TrueHUD.SpecialBar = getBoolVal("TrueHUD", "SpecialBar", "True HUD integration", "TrueHUD special bar usage", TrueHUD.SpecialBar);
@@ -258,45 +254,50 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// Logging
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
-	logger::info(FMT_STRING("  [Health] BaseMult={} MassMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
-		Health.BaseMult, Health.MassMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={} MaxDamageMultiplier={}"),
+	logger::info(FMT_STRING("  [Health] BaseHealth={} MassMult={} RegenRate={}"),
+		Health.BaseHealth, Health.MassMult, Health.RegenRate);
+	logger::info(FMT_STRING("  [Armor] ArmorMult={}"), Armor.ArmorMult);
+	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
 		Weapon.MeleeMult,
 		Weapon.WeightContribution,
 		Weapon.BowDrawSpeedMult,
 		Weapon.ArrowDamageMult,
-		Weapon.CrossbowMult,
-		Weapon.MaxDamageMultiplier);
+		Weapon.CrossbowMult);
 	logger::info(
 		FMT_STRING(
 			"  [Unarmed] ArmorContribution={} WeightContribution={} "
 			"SkillContribution={} HeavyGauntletContribution={} "
-			"LightGauntletContribution={} SkillType={} MaxArmorMultiplier={}"),
+			"LightGauntletContribution={} SkillType={}"),
 		Unarmed.ArmorContribution,
 		Unarmed.WeightContribution,
 		Unarmed.SkillContribution,
 		Unarmed.HeavyGauntletContribution,
 		Unarmed.LightGauntletContribution,
-		Unarmed.SkillType,
-		Unarmed.MaxArmorMultiplier);
+		Unarmed.SkillType);
 	logger::info(FMT_STRING("  [Creature] DamageMult={}"), Creature.DamageMultiplier);
-	logger::info(FMT_STRING("  [Blocking] BashMult={} BlockingMult={}"), Blocking.BashMult, Blocking.BlockingMult);
 	logger::info(
 		FMT_STRING(
-			"  [Shield] ArmorContribution={} WeightContribution={} MaxArmorMultiplier={}"),
+			"  [Blocking] BashMult={} BlockingMult={}"),
+		Blocking.BashMult,
+		Blocking.BlockingMult);
+	logger::info(
+		FMT_STRING(
+			"  [Shield] ArmorContribution={} WeightContribution={}"),
 		Shield.ArmorContribution,
-		Shield.WeightContribution,
-		Shield.MaxArmorMultiplier);
+		Shield.WeightContribution);
 	logger::info(FMT_STRING("  [Attack] NormalAttackMult={} PowerAttackMult={} AttackOfOpportunityMult={}"),
 		Attack.NormalAttackMult, Attack.PowerAttackMult, Attack.AttackOfOpportunityMult);
 	logger::info(FMT_STRING("  [Magic] ResistanceMult={}"), Magic.ResistanceMult);
 	logger::info(FMT_STRING("  [Environment] TrapMult={}"), Environment.TrapMult);
-	logger::info(FMT_STRING("  [Global] ToPCMult={} ToNPCMult={} DifficultyScaling={}"),
+	logger::info(FMT_STRING("  [Global] ToPCMult={} ToNPCMult={} DifficultyScaling={} WeaponScalingCurve={} ArmorScalingCurve={} EquipmentReferenceMultiplier={}"),
 		Global.ToPCMult,
 		Global.ToNPCMult,
-		Global.DifficultyScaling);
-	logger::info(FMT_STRING("  [Impact] Normal={} Powerful={} Seismic={}"),
-		Impact.Normal, Impact.Powerful, Impact.Seismic);
+		Global.DifficultyScaling,
+		Global.WeaponScalingCurve,
+		Global.ArmorScalingCurve,
+		Global.EquipmentReferenceMultiplier);
+	logger::info(FMT_STRING("  [Impact] Normal={} Large={} Massive={}"),
+		Impact.Normal, Impact.Large, Impact.Massive);
 	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),
 		TrueHUD.SpecialBar, ignoreValhalla);
 	logger::info(FMT_STRING("  [TrueHUD Colors] Normal=0x{:X} Depleted=0x{:X}"),

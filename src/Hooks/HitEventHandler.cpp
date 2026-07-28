@@ -45,7 +45,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 
 	// 2. Get base attack damage stats from the cached baseline weapons
 	float minDamage = _minWeapon->GetAttackDamage();
-	float maxDamage = _maxWeapon->GetAttackDamage() * 7.0f;
+	float maxDamage = _maxWeapon->GetAttackDamage() * settings->Global.EquipmentReferenceMultiplier;
 	float currentDamage = a_weapon->GetAttackDamage();
 
 	// 3. Prevent division by zero
@@ -60,7 +60,8 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 		0.0f,
 		1.0f);
 
-	float r1 = normalizedDamage * 2.5f;
+	float r1 = normalizedDamage * settings->Global.WeaponScalingCurve;
+
 	float r2 = r1 / (1.0f + r1);
 
 	// 5. Multiply the rescaled damage factor directly by the flat weight contribution multiplier
@@ -197,6 +198,162 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 	return stagger;
 }
 
+bool HitEventHandler::IsShieldStrike(RE::Actor* actor, RE::HitData* hitData)
+{
+	if (!actor || !hitData) {
+		return false;
+	}
+
+	if (hitData->skill != RE::ActorValue::kNone) {
+		return false;
+	}
+
+	// CommonLib:
+	// true  = left hand
+	// false = right hand
+	auto leftHand = actor->GetEquippedObject(true);
+	auto rightHand = actor->GetEquippedObject(false);
+
+	logger::info(
+		FMT_STRING("[ShieldCheck] Actor={} Weapon={} Skill={} Flags={} Left={} Right={}"),
+		actor->GetName(),
+		hitData->weapon ? hitData->weapon->GetName() : "NULL",
+		magic_enum::enum_name(hitData->skill),
+		hitData->flags.underlying(),
+		leftHand ? leftHand->GetName() : "NULL",
+		rightHand ? rightHand->GetName() : "NULL");
+
+	auto shield = leftHand ? leftHand->As<RE::TESObjectARMO>() : nullptr;
+
+	if (!shield) {
+		logger::info("[ShieldCheck] Left hand is not armor.");
+		return false;
+	}
+
+	logger::info(
+		FMT_STRING("[ShieldCheck] LeftArmor={} IsShield={}"),
+		shield->GetName(),
+		shield->IsShield());
+
+	if (!shield->IsShield()) {
+		return false;
+	}
+
+	const auto flags = hitData->flags.underlying();
+
+	if (flags != 196608 && flags != 196609) {
+		logger::info("[ShieldCheck] Flags {} are not shield strike flags.", flags);
+		return false;
+	}
+
+	logger::info(
+		FMT_STRING("[Shield Strike FOUND] Actor={} Flags={}"),
+		actor->GetName(),
+		flags);
+
+	return true;
+}
+
+float HitEventHandler::GetShieldDamage(RE::Actor* a_actor)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (!a_actor || !_minShield || !_maxShield) {
+		return 0.0f;
+	}
+
+	auto leftHand = a_actor->GetEquippedObject(true);
+	auto shield = leftHand ? leftHand->As<RE::TESObjectARMO>() : nullptr;
+
+	if (!shield || !shield->IsShield()) {
+		return 0.0f;
+	}
+
+	// ==========================
+	// Shield Armor Scaling
+	// ==========================
+
+	float minArmor = _minShield->GetArmorRating();
+
+	float maxArmor =
+		_maxShield->GetArmorRating() *
+		settings->Global.EquipmentReferenceMultiplier;
+
+	float minWeight = _minShield->GetWeight();
+	float maxWeight = _maxShield->GetWeight();
+
+	float armorRange = maxArmor - minArmor;
+
+	if (armorRange <= 0.0f) {
+		armorRange = 1.0f;
+	}
+
+	float weightRange = maxWeight - minWeight;
+
+	if (weightRange <= 0.0f) {
+		weightRange = 1.0f;
+	}
+
+	float normalizedArmor =
+		std::clamp(
+			(shield->GetArmorRating() - minArmor) / armorRange,
+			0.0f,
+			1.0f);
+
+	float normalizedWeight =
+		std::clamp(
+			(shield->GetWeight() - minWeight) / weightRange,
+			0.0f,
+			1.0f);
+
+	// Same ARR curve as weapons/gauntlets
+
+	float armorR1 =
+		normalizedArmor * settings->Global.ArmorScalingCurve;
+
+	float armorR2 =
+		armorR1 / (1.0f + armorR1);
+
+	float baseFactor =
+		std::clamp(
+			(armorR2 * settings->Shield.ArmorContribution) +
+				(normalizedWeight * settings->Shield.WeightContribution),
+			0.0f,
+			1.0f);
+
+	// Shield impact range
+	// Hide -> Daedric
+
+	float poiseDamage =
+		std::lerp(
+			25.0f,
+			75.0f,
+			baseFactor);
+
+	if (settings->Debug.LogWeaponCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[Shield Strike Calc] "
+				"Shield={} Armor={} Weight={} "
+				"ArmorNorm={} WeightNorm={} "
+				"ArmorCurve={} "
+				"BaseFactor={} Final={}"),
+			shield->GetName(),
+			shield->GetArmorRating(),
+			shield->GetWeight(),
+			normalizedArmor,
+			normalizedWeight,
+			armorR2,
+			baseFactor,
+			poiseDamage);
+	}
+
+	return std::clamp(
+		poiseDamage,
+		0.0f,
+		200.0f);
+}
+
 float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 {
 	auto settings = Settings::GetSingleton();
@@ -216,7 +373,7 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 
 	// Same normalization curve as weapons
 	float minDamage = _minWeapon->GetAttackDamage();
-	float maxDamage = _maxWeapon->GetAttackDamage() * 7.0f;
+	float maxDamage = _maxWeapon->GetAttackDamage() * settings->Global.EquipmentReferenceMultiplier;
 
 	float normalizedDamage =
 		std::clamp(
@@ -225,7 +382,8 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 			0.0f,
 			1.0f);
 
-	float r1 = normalizedDamage * 2.5f;
+	float r1 = normalizedDamage * settings->Global.WeaponScalingCurve;
+
 	float r2 = r1 / (1.0f + r1);
 
 	float poiseDamage =
@@ -244,7 +402,7 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 
 	if (gauntlet && _minGauntlet && _maxGauntlet) {
 		float minArmor = _minGauntlet->GetArmorRating();
-		float maxArmor = _maxGauntlet->GetArmorRating() * 8.0f;
+		float maxArmor = _maxGauntlet->GetArmorRating() * settings->Global.ArmorScalingCurve;
 
 		float minWeight = _minGauntlet->GetWeight();
 		float maxWeight = _maxGauntlet->GetWeight();
@@ -271,7 +429,8 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 				1.0f);
 
 		// Same rescale curve used by weapons
-		float armorR1 = normalizedArmor * 2.5f;
+		float armorR1 = normalizedArmor * settings->Global.ArmorScalingCurve;
+
 		float armorR2 = armorR1 / (1.0f + armorR1);
 
 		// Armor and weight each have their own INI contribution
@@ -512,35 +671,32 @@ float HitEventHandler::ApplyAttackMultiplier(RE::HitData* hitData, float stagger
 		return stagger;
 	}
 
-	logger::info(
-		FMT_STRING("[Attack Info] EquipIndex={} Weapon={} Skill={} Flags={}"),
-		hitData->equipIndex,
-		hitData->weapon ? hitData->weapon->GetName() : "NONE",
-		magic_enum::enum_name(hitData->skill),
-		hitData->flags.underlying());
-
 	float staggerOffset = attackData->data.staggerOffset;
 
 	float attackMult = 1.0f;
 
-	if (staggerOffset == 0.0f) {
-		// Normal attack
+	if (staggerOffset == 1.0f) {
+		// Power attacks naturally deal 2x poise damage
+		attackMult = 2.0f * settings->Attack.PowerAttackMult;
+	} else {
+		// Normal attacks
 		attackMult = settings->Attack.NormalAttackMult;
-	} else if (staggerOffset == 1.0f) {
-		// Power attack
-		attackMult = settings->Attack.PowerAttackMult;
 	}
+
+	float result = stagger * attackMult;
 
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
-			FMT_STRING("[Attack Data] Offset={} Before={} Mult={} After={}"),
+			FMT_STRING(
+				"[Custom Attack Mult] Type={} Offset={} Before={} Mult={} After={}"),
+			staggerOffset == 1.0f ? "Power" : "Normal",
 			staggerOffset,
 			stagger,
 			attackMult,
-			stagger * attackMult);
+			result);
 	}
 
-	return stagger * attackMult;
+	return result;
 }
 
 float HitEventHandler::CalculateBashStagger(RE::Actor* aggressor)
@@ -578,84 +734,94 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	if (!target || stagger <= 0.0f) {
 		return stagger;
 	}
+
 	auto settings = Settings::GetSingleton();
-	// --- Pure Hyperbolic Armor Reduction (ARR) ---
+	auto instance = GetSingleton();
+
 	float totalArmor = (std::max)(0.0f,
 		static_cast<float>(target->GetActorRuntimeData().armorRating));
 
-	float r1 = (totalArmor / 100.0f) * settings->Health.ArmorMult * 5.0f;
+	// Maximum armor value used as the normalization reference.
+	float maxArmor =
+		instance->_maxArmorRating *
+		settings->Global.EquipmentReferenceMultiplier;
+
+	// Prevent divide-by-zero.
+	if (maxArmor <= 0.0f) {
+		return stagger;
+	}
+
+	// Normalize armor against the reference point.
+	float armorRatio =
+		std::clamp(
+			totalArmor / maxArmor,
+			0.0f,
+			1.0f);
+
+	// Hyperbolic scaling curve.
+	float curveStrength = settings->Global.ArmorScalingCurve;
+
+	float r1 = armorRatio * curveStrength;
 
 	float armorReduction = r1 / (1.0f + r1);
 
-	float armorMult = 1.0f - armorReduction;
-
-	bool minCapApplied = false;
-
-	if (armorMult < settings->Health.ArmorMultMin) {
-		armorMult = settings->Health.ArmorMultMin;
-		minCapApplied = true;
-	}
+	// Convert reduction into damage multiplier.
+	float armorMultiplier =
+		std::clamp(
+			1.0f - armorReduction,
+			0.0f,
+			1.0f);
 
 	float preArmorStagger = stagger;
 
-	stagger *= armorMult;
+	stagger *= armorMultiplier;
 
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
 			FMT_STRING(
-				"[Armor Calc] Target={} Armor={} "
-				"BaseStagger={} r1={} Reduction={} "
-				"RawMult={} FinalMult={} MinCap={} FinalStagger={}"),
+				"[Armor Calc] Target={} Armor={} Ratio={} MaxArmor={} "
+				"Curve={} Reduction={} FinalMult={} Before={} After={}"),
 			target->GetName(),
 			totalArmor,
-			preArmorStagger,
-			r1,
+			armorRatio,
+			maxArmor,
+			curveStrength,
 			armorReduction,
-			1.0f - armorReduction,
-			armorMult,
-			minCapApplied,
+			armorMultiplier,
+			preArmorStagger,
 			stagger);
 	}
 
 	return stagger;
 }
 
-float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* aggressor, RE::Actor* target, float stagger)
+float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* target, float stagger)
 {
-	auto settings = Settings::GetSingleton();
+	if (!hitData || !target || hitData->percentBlocked <= 0.0f) {
+		return stagger;
+	}
+	auto  settings = Settings::GetSingleton();
+	float blockMult = 1.0f;
 
-	float baseMult = (1.0f - hitData->percentBlocked);
-
-	// Global block poise tuning
-	baseMult *= settings->Blocking.BlockingMult;
+	// Power attacks always deal full poise damage
+	if (!hitData->flags.any(RE::HitData::Flag::kPowerAttack)) {
+		// Normal blocking scales with vanilla block percentage
+		blockMult = 1.0f - hitData->percentBlocked;
+	}
 
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
 			FMT_STRING(
-				"Block Calc: PercentBlocked={} InitialBlockMult={} BlockPoiseMult={}"),
+				"Block Calc: PercentBlocked={} PowerAttack={} BlockMult={} "
+				"StaggerBefore={} StaggerAfter={}"),
 			hitData->percentBlocked,
-			baseMult,
-			settings->Blocking.BlockingMult);
-	}
-
-	if (aggressor) {
-		PoiseAV::ApplyPerkEntryPoint(34, aggressor, target, &baseMult);
-	}
-
-	if (target) {
-		PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
-	}
-
-	if (settings->Debug.LogArmorCalcs) {
-		logger::info(
-			FMT_STRING(
-				"Block Calc After Perks: FinalBlockMult={} StaggerBefore={} StaggerAfter={}"),
-			baseMult,
+			hitData->flags.any(RE::HitData::Flag::kPowerAttack),
+			blockMult,
 			stagger,
-			stagger * baseMult);
+			stagger * blockMult);
 	}
 
-	return stagger * baseMult;
+	return stagger * blockMult;
 }
 
 float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggressor, RE::HitData* hitData)
@@ -695,20 +861,26 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	// Weapon / Unarmed Attacks
 	// ==========================
 	else if (hitData->weapon) {
-		auto weapon = hitData->weapon->As<RE::TESObjectWEAP>();
+		// Shield strikes can carry a weapon pointer.
+		if (hitData->skill == RE::ActorValue::kNone &&
+			IsShieldStrike(aggressor, hitData)) {
+			stagger = GetShieldDamage(aggressor);
+		} else {
+			auto weapon = hitData->weapon->As<RE::TESObjectWEAP>();
 
-		if (!weapon) {
-			return 0.0f;
-		}
-
-		if (weapon->IsHandToHandMelee()) {
-			if (!aggressor) {
+			if (!weapon) {
 				return 0.0f;
 			}
 
-			stagger = GetUnarmedDamage(aggressor);
-		} else {
-			stagger = CalculateWeaponStagger(aggressor, weapon);
+			if (weapon->IsHandToHandMelee()) {
+				if (!aggressor) {
+					return 0.0f;
+				}
+
+				stagger = GetUnarmedDamage(aggressor);
+			} else {
+				stagger = CalculateWeaponStagger(aggressor, weapon);
+			}
 		}
 	}
 	// ==========================
@@ -732,7 +904,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 		// ==========================
 		// Environment / Traps
 		// ==========================
-		if (!aggressor) {
+		else if (!aggressor) {
 			if (settings->Debug.LogWeaponCalcs) {
 				logger::info("[kNone BRANCH] ENVIRONMENT");
 			}
@@ -836,21 +1008,23 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 
 	stagger = ApplyArmorReduction(target, stagger);
 
-	stagger = ApplyBlockingMultiplier(
-		hitData,
-		aggressor,
-		target,
-		stagger);
+	stagger = ApplyBlockingMultiplier(hitData, target, stagger);
 
 	if (settings->Debug.LogStaggerCalcs) {
+		float staggerOffset = 0.0f;
+
+		if (hitData->attackData) {
+			staggerOffset = hitData->attackData->data.staggerOffset;
+		}
+
 		logger::info(
 			FMT_STRING(
-				"[RecalculateStagger END] Target={} Aggressor={} FinalStagger={}"),
-			target ? target->GetName() : "NULL",
-			aggressor ? aggressor->GetName() : "ENVIRONMENT",
+				"[RecalculateStagger END] Target={} Aggressor={} AttackType={} FinalStagger={}"),
+			target ? target->GetName() : "NONE",
+			aggressor ? aggressor->GetName() : "NONE",
+			staggerOffset == 1.0f ? "Power" : "Normal",
 			stagger);
 	}
-
 	return stagger;
 }
 

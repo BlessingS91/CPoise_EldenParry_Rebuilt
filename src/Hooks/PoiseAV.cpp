@@ -9,20 +9,13 @@
 #include <limits>
 //#undef min
 
-float PoiseAV::ApplyDamageModifiers(RE::Actor* a_aggressor, RE::Actor* a_target, float a_damage)
+float PoiseAV::ApplyDamageModifiers(RE::Actor* a_target, float a_damage)
 {
 	auto settings = Settings::GetSingleton();
 
-	if (!a_aggressor || !a_target) {
+	if (!a_target) {
 		return a_damage;
 	}
-
-	float baseMult = 1.0f;
-
-	ApplyPerkEntryPoint(34, a_aggressor, a_target, &baseMult);
-	ApplyPerkEntryPoint(33, a_target, a_aggressor, &baseMult);
-
-	a_damage *= baseMult;
 
 	if (a_target->IsPlayerRef()) {
 		a_damage *= settings->Global.ToPCMult;
@@ -53,7 +46,7 @@ bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 		}
 	}
 
-	if (settings->Debug.LogActorCalcs) {
+	if (settings->Debug.LogActorCalcs && result != false) {
 		logger::info(
 			FMT_STRING("[CanDamageActor] Actor={} Mode={} Result={}"),
 			a_actor ? a_actor->GetName() : "NULL",
@@ -69,7 +62,7 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 	auto settings = Settings::GetSingleton();
 
 	if (!a_actor) {
-		return settings->Health.BaseMult;
+		return settings->Health.BaseHealth;
 	}
 
 	std::string editorID;
@@ -78,7 +71,7 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 		editorID = race->GetFormEditorID();
 	}
 
-	float health = settings->Health.BaseMult;
+	float health = settings->Health.BaseHealth;
 	float mass = 1.0f;
 
 	auto raceMass = settings->JSONSettings["Races"][editorID];
@@ -95,12 +88,12 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 
 	health *= massMultiplier;
 
-	if (settings->Debug.LogActorCalcs && health != settings->Health.BaseMult) {
+	if (settings->Debug.LogActorCalcs && health != settings->Health.BaseHealth) {
 		logger::info(
 			FMT_STRING("[Poise Health Calc] Actor={} Race={} Base={} Mass={} MassMult={} Final={}"),
 			a_actor->GetName(),
 			editorID,
-			settings->Health.BaseMult,
+			settings->Health.BaseHealth,
 			mass,
 			settings->Health.MassMult,
 			health);
@@ -167,13 +160,16 @@ float PoiseAV::ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDa
 
 	a_poiseDamage *= settings->Attack.AttackOfOpportunityMult;
 
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs &&
+		settings->Debug.LogActorCalcs &&
+		beforeDamage != a_poiseDamage) {
 		logger::info(
-			FMT_STRING("[Attack of Oppourtunity Mult] Target={} Mult={} Before={} After={}"),
+			FMT_STRING("[AoO Check] Target={} AttackState={} Casting={}"),
 			a_target->GetName(),
-			settings->Attack.AttackOfOpportunityMult,
-			beforeDamage,
-			a_poiseDamage);
+			a_target->AsActorState() ?
+				static_cast<int>(a_target->AsActorState()->GetAttackState()) :
+				-1,
+			IsActorPerformingAction(a_target));
 	}
 
 	return a_poiseDamage;
@@ -196,13 +192,7 @@ float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggresso
 
 	a_poiseDamage *= damageMultiplier;
 
-	if (a_target->IsPlayerRef()) {
-		a_poiseDamage *= settings->Global.ToPCMult;
-	} else {
-		a_poiseDamage *= settings->Global.ToNPCMult;
-	}
-
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
 		logger::info(
 			FMT_STRING("[Difficulty Scaling] Target={} Before={} Difficulty={} Scaling={} FinalMult={} After={}"),
 			a_target->GetName(),
@@ -240,31 +230,33 @@ float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* 
 	std::string impactType = "None";
 
 	if (poiseDamagePercent >= settings->Impact.Normal &&
-		poiseDamagePercent < settings->Impact.Powerful) {
+		poiseDamagePercent < settings->Impact.Large) {
 		impactType = "Normal";
 		Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
 
-	} else if (poiseDamagePercent >= settings->Impact.Powerful &&
-			   poiseDamagePercent < settings->Impact.Seismic) {
+	} else if (poiseDamagePercent >= settings->Impact.Large &&
+			   poiseDamagePercent < settings->Impact.Massive) {
 		impactType = "Powerful";
 		Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
 
-	} else if (poiseDamagePercent >= settings->Impact.Seismic) {
+	} else if (poiseDamagePercent >= settings->Impact.Massive) {
 		impactType = "Seismic";
 		Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
 	}
 
 	if (settings->Debug.LogStaggerCalcs) {
-		logger::info(
-			FMT_STRING(
-				"[Impact Check] Target={} Damage={} Percent={} Impact={} Thresholds={}/{}/{}"),
-			a_target->GetName(),
-			a_poiseDamage,
-			poiseDamagePercent,
-			impactType,
-			settings->Impact.Normal,
-			settings->Impact.Powerful,
-			settings->Impact.Seismic);
+		if (a_poiseDamage > 1.0f) {
+			logger::info(
+				FMT_STRING(
+					"[Impact Check] Target={} Damage={} Percent={} Impact={} Thresholds={}/{}/{}"),
+				a_target->GetName(),
+				a_poiseDamage,
+				poiseDamagePercent,
+				impactType,
+				settings->Impact.Normal,
+				settings->Impact.Large,
+				settings->Impact.Massive);
+		}
 	}
 	return poiseDamagePercent;
 }
@@ -285,7 +277,7 @@ void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, floa
 
 	float safeStaggerMag = std::clamp(a_poiseDamagePercent, 0.0f, 2.0f);
 
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
 		float maxPoise;
 
 		{
@@ -311,7 +303,8 @@ void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, floa
 
 	TryStagger(a_target, safeStaggerMag, a_aggressor);
 
-	a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
+	// REMOVE THIS
+	// a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
 }
 
 void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, [[maybe_unused]] RE::HitData* a_hitData)
@@ -326,7 +319,7 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	float poiseDamagePercent = 0.0f;
 	float initialPoiseDamage = a_poiseDamage;
 
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
 		logger::info(
 			FMT_STRING("[Poise Damage START] Target={}({:08X}) Aggressor={}({:08X}) IncomingDamage={}"),
 			a_target->GetName(),
@@ -336,30 +329,54 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			a_poiseDamage);
 	}
 
-	//Attack of Oppourtunity Mult
+	// Attack of Opportunity
 	a_poiseDamage = ApplyAttackOfOpportunityMult(a_target, a_poiseDamage);
 	float afterAoO = a_poiseDamage;
-	// Difficulty / PC-NPC scaling
+
+	// Your custom difficulty scaling
 	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
 		a_poiseDamage = ApplyDifficultyScaling(a_target, a_aggressor, a_poiseDamage);
-
-		poiseDamagePercent = CheckImpact(a_target, a_poiseDamage, avManager);
 	}
+	float afterDifficulty = a_poiseDamage;
 
-	if (settings->Debug.LogStaggerCalcs) {
-		float finalPoiseDamage = a_poiseDamage;
-		logger::info(
-			FMT_STRING(
-				"[Final Poise Calculation] Target={} Initial={} AfterAoO={} Final={} PercentOfMax={}"),
-			a_target->GetName(),
-			initialPoiseDamage,
-			afterAoO,
-			finalPoiseDamage,
-			poiseDamagePercent);
+	// Vanilla stagger perks should be LAST
+	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
+		float incomingMult = 1.0f;
+		float targetMult = 1.0f;
+
+		// Mod Incoming Stagger (attacker perk)
+		ApplyPerkEntryPoint(
+			34,
+			a_aggressor->As<RE::Character>(),
+			a_target->As<RE::Character>(),
+			&incomingMult);
+
+		// Mod Target Stagger (target perk)
+		ApplyPerkEntryPoint(
+			33,
+			a_target->As<RE::Character>(),
+			a_aggressor->As<RE::Character>(),
+			&targetMult);
+
+		float vanillaStaggerMult = incomingMult * targetMult;
+
+		a_poiseDamage *= vanillaStaggerMult;
 	}
 
 	// Apply final calculated poise damage.
 	a_poiseDamage = std::max(a_poiseDamage, 0.0f);
+	poiseDamagePercent = CheckImpact(a_target, a_poiseDamage, avManager);
+
+	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
+		float afterVanillaPerks = a_poiseDamage;
+		logger::info(
+			FMT_STRING("[Poise Stages] Target={} Initial={} AoO={} Difficulty={} VanillaPerks={}"),
+			a_target->GetName(),
+			initialPoiseDamage,
+			afterAoO,
+			afterDifficulty,
+			afterVanillaPerks);
+	}
 
 	{
 		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
@@ -378,7 +395,7 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 		HandlePoiseBreak(a_target, a_aggressor, a_poiseDamage, poiseDamagePercent, poise, avManager);
 	}
 
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
 		float currentPoise;
 		float maxPoise;
 
@@ -398,7 +415,7 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	}
 }
 
-void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
+void PoiseAV::Update(RE::Actor* a_actor, float a_delta)
 {
 	auto settings = Settings::GetSingleton();
 	if (!a_actor) {
@@ -406,9 +423,12 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 	}
 	auto& runtime = a_actor->GetActorRuntimeData();
 
-	if (settings->Debug.LogActorCalcs) {
+	if (settings->Debug.LogActorCalcs &&
+		(!runtime.currentProcess ||
+			!runtime.currentProcess->InHighProcess() ||
+			!a_actor->Is3DLoaded())) {
 		logger::info(
-			FMT_STRING("[Poise Update Check] Actor={} Process={} High={} 3D={}"),
+			FMT_STRING("[Poise Update Failed] Actor={} Process={} High={} 3D={}"),
 			a_actor->GetName(),
 			runtime.currentProcess != nullptr,
 			runtime.currentProcess ? runtime.currentProcess->InHighProcess() : false,
@@ -462,9 +482,10 @@ void PoiseAV::Update(RE::Actor* a_actor, [[maybe_unused]] float a_delta)
 			}
 			RemoveFromFaction(a_actor, ForceFullBodyStagger);
 		} else {
-			if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove")) {
+			if (!GetBoolVariable(a_actor, "bKaputt_IsInKillMove") &&
+				actorState &&
+				!actorState->actorState2.staggered) {
 				TryStagger(a_actor, 0.5f, nullptr);
-				a_actor->SetGraphVariableBool("bPoise_IsStaggered", false);
 			}
 		}
 	} else {

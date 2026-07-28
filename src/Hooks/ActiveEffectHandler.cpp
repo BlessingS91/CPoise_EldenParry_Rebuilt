@@ -47,14 +47,7 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 		return;
 	}
 
-	float baseMult = 1.0f;
-
 	if (a_aggressor) {
-		PoiseAV::ApplyPerkEntryPoint(34, a_aggressor->As<RE::Character>(), a_target->As<RE::Character>(), &baseMult);
-		PoiseAV::ApplyPerkEntryPoint(33, a_target->As<RE::Character>(), a_aggressor->As<RE::Character>(), &baseMult);
-
-		poiseDamage *= baseMult;
-
 		if (poiseDamage > 0) {
 			poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
 		}
@@ -83,7 +76,7 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 
 		logger::info(
 			"[Magic Effect Poise] Target={}({:08X}) Aggressor={}({:08X}) AV={} "
-			"Type={} RawMagnitude={} EffectMultiplier={} BaseMult={} "
+			"Type={} RawMagnitude={} EffectMultiplier={} "
 			"BeforeResist={} ResistMultiplier={} FinalDamage={}",
 			a_target->GetName(),
 			a_target->GetFormID(),
@@ -93,7 +86,6 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 			a_magnitudeDelta > 0 ? "Damage" : "Recovery",
 			a_magnitudeDelta,
 			effectMultiplier,
-			baseMult,
 			preResistDamage,
 			resistMultiplier,
 			poiseDamage);

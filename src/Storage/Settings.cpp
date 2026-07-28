@@ -110,12 +110,69 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Weapon.BowDrawSpeedMult = getFloatVal("Weapon", "BowDrawSpeedMult", "Damage Settings", "Bow Draw Speed Mult", Weapon.BowDrawSpeedMult);
 	Weapon.ArrowDamageMult = getFloatVal("Weapon", "ArrowDamageMult", "Damage Settings", "Arrow Damage Mult", Weapon.ArrowDamageMult);
 	Weapon.CrossbowMult = getFloatVal("Weapon", "CrossbowMult", "Damage Settings", "Crossbow Mult", Weapon.CrossbowMult);
+	Weapon.MaxDamageMultiplier =
+		getFloatVal(
+			"Weapon",
+			"MaxDamageMultiplier",
+			"Damage Settings",
+			"Max Damage Multiplier",
+			Weapon.MaxDamageMultiplier);
 
 	// Unarmed Damage
-	Unarmed.Multiplier = getFloatVal("Unarmed", "Multiplier", "Unarmed Damage Settings", "Unarmed Damage Mult", Unarmed.Multiplier);
-	Unarmed.GauntletWeightContribution = getFloatVal("Unarmed", "GauntletWeightContribution", "Unarmed Damage Settings", "Gauntlet Weight Contribution", Unarmed.GauntletWeightContribution);
-	Unarmed.SkillContribution = getFloatVal("Unarmed", "SkillContribution", "Unarmed Damage Settings", "Unarmed Skill Contribution", Unarmed.SkillContribution);
-	Unarmed.SkillType = static_cast<int>(ini.GetLongValue("Unarmed", "SkillType", Unarmed.SkillType));
+	Unarmed.ArmorContribution =
+		getFloatVal(
+			"Unarmed",
+			"ArmorContribution",
+			"Unarmed Damage Settings",
+			"Armor Contribution",
+			Unarmed.ArmorContribution);
+
+	Unarmed.WeightContribution =
+		getFloatVal(
+			"Unarmed",
+			"WeightContribution",
+			"Unarmed Damage Settings",
+			"Weight Contribution",
+			Unarmed.WeightContribution);
+
+	Unarmed.SkillContribution =
+		getFloatVal(
+			"Unarmed",
+			"SkillContribution",
+			"Unarmed Damage Settings",
+			"Skill Contribution",
+			Unarmed.SkillContribution);
+
+	Unarmed.HeavyGauntletContribution =
+		getFloatVal(
+			"Unarmed",
+			"HeavyGauntletContribution",
+			"Unarmed Damage Settings",
+			"Heavy Gauntlet Contribution",
+			Unarmed.HeavyGauntletContribution);
+
+	Unarmed.LightGauntletContribution =
+		getFloatVal(
+			"Unarmed",
+			"LightGauntletContribution",
+			"Unarmed Damage Settings",
+			"Light Gauntlet Contribution",
+			Unarmed.LightGauntletContribution);
+
+	Unarmed.SkillType =
+		static_cast<int>(
+			ini.GetLongValue(
+				"Unarmed",
+				"SkillType",
+				Unarmed.SkillType));
+
+	Unarmed.MaxArmorMultiplier =
+		getFloatVal(
+			"Unarmed",
+			"MaxArmorMultiplier",
+			"Unarmed Damage Settings",
+			"Max Armor Multiplier",
+			Unarmed.MaxArmorMultiplier);
 
 	// Creature Damage
 	Creature.DamageMultiplier = getFloatVal("Creature", "DamageMultiplier", "Damage Settings", "Creature Damage Multiplier", Creature.DamageMultiplier);
@@ -123,6 +180,31 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// Bash / Blocking
 	Blocking.BashMult = getFloatVal("Blocking", "BashMult", "Damage Settings", "Bash Mult", Blocking.BashMult);
 	Blocking.BlockingMult = getFloatVal("Blocking", "BlockingMult", "General Damage Settings", "Blocking Multiplier", Blocking.BlockingMult);
+
+	// Shields
+	Shield.ArmorContribution =
+		getFloatVal(
+			"Shield",
+			"ArmorContribution",
+			"Shield Settings",
+			"Armor Contribution",
+			Shield.ArmorContribution);
+
+	Shield.WeightContribution =
+		getFloatVal(
+			"Shield",
+			"WeightContribution",
+			"Shield Settings",
+			"Weight Contribution",
+			Shield.WeightContribution);
+
+	Shield.MaxArmorMultiplier =
+		getFloatVal(
+			"Shield",
+			"MaxArmorMultiplier",
+			"Shield Settings",
+			"Max Armor Multiplier",
+			Shield.MaxArmorMultiplier);
 
 	// Attack Modifiers
 	Attack.NormalAttackMult = getFloatVal("Attack", "NormalAttackMult", "Damage Settings", "Normal Attack Mult", Attack.NormalAttackMult);
@@ -178,12 +260,33 @@ void Settings::LoadINI(const wchar_t* a_path)
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
 	logger::info(FMT_STRING("  [Health] BaseMult={} MassMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
 		Health.BaseMult, Health.MassMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
-		Weapon.MeleeMult, Weapon.WeightContribution, Weapon.BowDrawSpeedMult, Weapon.ArrowDamageMult, Weapon.CrossbowMult);
-	logger::info(FMT_STRING("  [Unarmed] Multiplier={} GauntletWeightContribution={} SkillContribution={} SkillType={}"),
-		Unarmed.Multiplier, Unarmed.GauntletWeightContribution, Unarmed.SkillContribution, Unarmed.SkillType);
+	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={} MaxDamageMultiplier={}"),
+		Weapon.MeleeMult,
+		Weapon.WeightContribution,
+		Weapon.BowDrawSpeedMult,
+		Weapon.ArrowDamageMult,
+		Weapon.CrossbowMult,
+		Weapon.MaxDamageMultiplier);
+	logger::info(
+		FMT_STRING(
+			"  [Unarmed] ArmorContribution={} WeightContribution={} "
+			"SkillContribution={} HeavyGauntletContribution={} "
+			"LightGauntletContribution={} SkillType={} MaxArmorMultiplier={}"),
+		Unarmed.ArmorContribution,
+		Unarmed.WeightContribution,
+		Unarmed.SkillContribution,
+		Unarmed.HeavyGauntletContribution,
+		Unarmed.LightGauntletContribution,
+		Unarmed.SkillType,
+		Unarmed.MaxArmorMultiplier);
 	logger::info(FMT_STRING("  [Creature] DamageMult={}"), Creature.DamageMultiplier);
 	logger::info(FMT_STRING("  [Blocking] BashMult={} BlockingMult={}"), Blocking.BashMult, Blocking.BlockingMult);
+	logger::info(
+		FMT_STRING(
+			"  [Shield] ArmorContribution={} WeightContribution={} MaxArmorMultiplier={}"),
+		Shield.ArmorContribution,
+		Shield.WeightContribution,
+		Shield.MaxArmorMultiplier);
 	logger::info(FMT_STRING("  [Attack] NormalAttackMult={} PowerAttackMult={} AttackOfOpportunityMult={}"),
 		Attack.NormalAttackMult, Attack.PowerAttackMult, Attack.AttackOfOpportunityMult);
 	logger::info(FMT_STRING("  [Magic] ResistanceMult={}"), Magic.ResistanceMult);

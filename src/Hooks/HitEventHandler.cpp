@@ -30,10 +30,10 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 			if (weaponType == "Bow" && a_weapon->weaponData.animationType == RE::WEAPON_TYPE::kCrossbow)
 				weaponType = "Crossbow";
 
-			auto multiplier = settings->JSONSettings["Weapons"]["Multipliers"][weaponType];
+			auto weaponMultiplier = _weaponMultiplierCache.find(weaponType);
 
-			if (multiplier != nullptr) {
-				weaponMult = multiplier.get<float>();
+			if (weaponMultiplier != _weaponMultiplierCache.end()) {
+				weaponMult = weaponMultiplier->second;
 			}
 
 			break;
@@ -112,16 +112,16 @@ float HitEventHandler::CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjec
 		return 0.0f;
 	}
 
+	// Unarmed attacks already return their fully calculated poise damage
 	if (weapon->IsHandToHandMelee()) {
-		float unarmedDamage = GetUnarmedDamage(aggressor);
-		return unarmedDamage * settings->Unarmed.Multiplier;
+		return GetUnarmedDamage(aggressor);
 	}
 
 	float weaponDamage = GetWeaponDamage(weapon);
 
 	if (settings->Debug.LogWeaponCalcs) {
 		logger::info(
-			FMT_STRING("[Melee Mult] Before={} Mult={} After={}"),
+			FMT_STRING("[Weapon Mult] Before={} Mult={} After={}"),
 			weaponDamage,
 			settings->Weapon.MeleeMult,
 			weaponDamage * settings->Weapon.MeleeMult);
@@ -235,16 +235,96 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 			r2);
 
 	// ==========================
-	// Gauntlet Weight
+	// Gauntlet Armor Scaling
 	// ==========================
+
 	auto gauntlet =
 		a_actor->GetWornArmor(
 			RE::BGSBipedObjectForm::BipedObjectSlot::kHands);
 
-	if (gauntlet) {
+	if (gauntlet && _minGauntlet && _maxGauntlet) {
+		float minArmor = _minGauntlet->GetArmorRating();
+		float maxArmor = _maxGauntlet->GetArmorRating() * 8.0f;
+
+		float minWeight = _minGauntlet->GetWeight();
+		float maxWeight = _maxGauntlet->GetWeight();
+
+		float armorRange = maxArmor - minArmor;
+		if (armorRange <= 0.0f)
+			armorRange = 1.0f;
+
+		float weightRange = maxWeight - minWeight;
+		if (weightRange <= 0.0f)
+			weightRange = 1.0f;
+
+		// Normalize armor and weight independently
+		float normalizedArmor =
+			std::clamp(
+				(gauntlet->GetArmorRating() - minArmor) / armorRange,
+				0.0f,
+				1.0f);
+
+		float normalizedWeight =
+			std::clamp(
+				(gauntlet->GetWeight() - minWeight) / weightRange,
+				0.0f,
+				1.0f);
+
+		// Same rescale curve used by weapons
+		float armorR1 = normalizedArmor * 2.5f;
+		float armorR2 = armorR1 / (1.0f + armorR1);
+
+		// Armor and weight each have their own INI contribution
+		float baseFactor =
+			std::clamp(
+				(armorR2 * settings->Unarmed.ArmorContribution) +
+					(normalizedWeight * settings->Unarmed.WeightContribution),
+				0.0f,
+				1.0f);
+
+		// Convert into poise value
+		float gauntletBonus =
+			std::lerp(
+				0.0f,
+				25.0f,
+				baseFactor);
+
+		// Heavy/Light specific scaling
+		float armorTypeContribution =
+			gauntlet->IsHeavyArmor() ?
+				settings->Unarmed.HeavyGauntletContribution :
+				settings->Unarmed.LightGauntletContribution;
+
 		poiseDamage +=
-			gauntlet->weight *
-			settings->Unarmed.GauntletWeightContribution;
+			gauntletBonus *
+			armorTypeContribution;
+
+		if (settings->Debug.LogWeaponCalcs) {
+			logger::info(
+				FMT_STRING(
+					"[Gauntlet Poise] "
+					"Name={} Heavy={} "
+					"Armor={} Weight={} "
+					"ArmorNorm={} WeightNorm={} "
+					"ArmorCurve={} "
+					"ArmorContribution={} "
+					"WeightContribution={} "
+					"BaseFactor={} "
+					"ArmorTypeContribution={} "
+					"FinalBonus={}"),
+				gauntlet->GetName(),
+				gauntlet->IsHeavyArmor(),
+				gauntlet->GetArmorRating(),
+				gauntlet->GetWeight(),
+				normalizedArmor,
+				normalizedWeight,
+				armorR2,
+				settings->Unarmed.ArmorContribution,
+				settings->Unarmed.WeightContribution,
+				baseFactor,
+				armorTypeContribution,
+				gauntletBonus * armorTypeContribution);
+		}
 	}
 
 	// ==========================
@@ -348,11 +428,10 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 	// ==========================
 	float multiplier = 1.0f;
 
-	auto jsonMultiplier =
-		settings->JSONSettings["Weapons"]["Multipliers"]["HandToHandMelee"];
+	auto handToHandMultiplier = _weaponMultiplierCache.find("HandToHandMelee");
 
-	if (jsonMultiplier != nullptr) {
-		multiplier = jsonMultiplier.get<float>();
+	if (handToHandMultiplier != _weaponMultiplierCache.end()) {
+		multiplier = handToHandMultiplier->second;
 	}
 
 	poiseDamage *= multiplier;
@@ -376,22 +455,30 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 		200.0f);
 }
 
-float HitEventHandler::GetShieldDamage(RE::TESObjectARMO* a_shield)
+float HitEventHandler::GetBashDamage(RE::TESObjectARMO* a_bashingItem)
 {
-	auto settings = Settings::GetSingleton();
-	auto shieldDamage = settings->JSONSettings["Weapons"]["Damage"]["Shield"];
-	if (shieldDamage != nullptr)
-		return std::lerp(static_cast<float>(shieldDamage), a_shield->weight, settings->Weapon.WeightContribution);
-	return a_shield->weight;
+	float multiplier = 1.0f;
+
+	auto shieldMultiplier = _weaponMultiplierCache.find("Shield");
+
+	if (shieldMultiplier != _weaponMultiplierCache.end()) {
+		multiplier = shieldMultiplier->second;
+	}
+
+	return a_bashingItem->weight * multiplier;
 }
 
 float HitEventHandler::GetMiscDamage()
 {
-	auto settings = Settings::GetSingleton();
-	auto miscDamage = settings->JSONSettings["Weapons"]["Damage"]["Misc"];
-	if (miscDamage != nullptr)
-		return static_cast<float>(miscDamage);
-	return 5.0f;
+	float multiplier = 1.0f;
+
+	auto miscMultiplier = _weaponMultiplierCache.find("Misc");
+
+	if (miscMultiplier != _weaponMultiplierCache.end()) {
+		multiplier = miscMultiplier->second;
+	}
+
+	return 5.0f * multiplier;
 }
 
 bool HitEventHandler::IsCreature(RE::Actor* actor)
@@ -476,7 +563,7 @@ float HitEventHandler::CalculateBashStagger(RE::Actor* aggressor)
 	auto rightHand = aggressor->GetEquippedObject(false);
 
 	if (leftHand && leftHand->formType == RE::FormType::Armor) {
-		return GetShieldDamage(leftHand->As<RE::TESObjectARMO>()) * bashMultiplier;
+		return GetBashDamage(leftHand->As<RE::TESObjectARMO>()) * bashMultiplier;
 	}
 
 	if (rightHand && rightHand->formType == RE::FormType::Weapon) {
@@ -619,12 +706,9 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 				return 0.0f;
 			}
 
-			stagger =
-				GetUnarmedDamage(aggressor) *
-				settings->Unarmed.Multiplier;
+			stagger = GetUnarmedDamage(aggressor);
 		} else {
-			stagger =
-				CalculateWeaponStagger(aggressor, weapon);
+			stagger = CalculateWeaponStagger(aggressor, weapon);
 		}
 	}
 	// ==========================
@@ -829,6 +913,7 @@ void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 	// Disable Skyrim vanilla stagger calculation
 	hitData->stagger = 0;
 }
+
 // void HitEventHandler::PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData)
 // {
 // 	if (!a_precisionHitData.target || !a_precisionHitData.target->Is(RE::FormType::ActorCharacter)) {

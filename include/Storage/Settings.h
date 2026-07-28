@@ -82,6 +82,10 @@ public:
 
 		float CrossbowMult{ 1.15f };
 
+		// Maximum weapon damage reference multiplier
+		// Higher values make weapon damage scale slower
+		float MaxDamageMultiplier{ 5.0f };
+
 	} Weapon;
 
 	// ==========================
@@ -89,13 +93,28 @@ public:
 	// ==========================
 	struct
 	{
-		float Multiplier{ 0.95f };
+		// How much gauntlet armor rating contributes to poise
+		float ArmorContribution{ 1.0f };
 
-		float GauntletWeightContribution{ 0.05f };
+		// How much gauntlet weight contributes to poise
+		float WeightContribution{ 0.15f };
 
+		// How much the selected skill contributes (0.40 = +40% at skill 100)
 		float SkillContribution{ 0.40f };
 
+		// Additional multiplier applied when wearing Heavy Armor gauntlets
+		float HeavyGauntletContribution{ 1.0f };
+
+		// Additional multiplier applied when wearing Light Armor gauntlets
+		float LightGauntletContribution{ 0.80f };
+
+		// Skill used for scaling
+		// 0=None, 1=OneHanded, 2=TwoHanded, ...
 		int SkillType{ 0 };
+
+		// Maximum gauntlet armor reference multiplier
+		// Higher values make armor contribution scale slower
+		float MaxArmorMultiplier{ 5.0f };
 
 	} Unarmed;
 
@@ -118,6 +137,23 @@ public:
 		float BlockingMult{ 1.0f };
 
 	} Blocking;
+
+	// ==========================
+	// Shield Damage
+	// ==========================
+	struct
+	{
+		// How much shield armor rating contributes to poise damage
+		float ArmorContribution{ 1.0f };
+
+		// How much shield weight contributes to poise damage
+		float WeightContribution{ 0.15f };
+
+		// Maximum shield armor reference multiplier
+		// Higher values make armor contribution scale slower
+		float MaxArmorMultiplier{ 5.0f };
+
+	} Shield;
 
 	// ==========================
 	// Attack Modifiers

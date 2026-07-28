@@ -1,5 +1,7 @@
 #pragma once
 #include "EldenParry.h"
+#include "Storage/Settings.h"
+#include <unordered_map>
 // #include "lib/PrecisionAPI.h"
 
 class HitEventHandler
@@ -18,9 +20,9 @@ public:
 		Hooks::Install();
 	}
 
-	void InitializeWeapons()
+	void InitializeEquipmentCache()
 	{
-		logger::info("Initializing weapon cache...");
+		logger::info("Initializing combat equipment cache...");
 
 		auto instance = GetSingleton();
 
@@ -30,6 +32,19 @@ public:
 		instance->_maxWeapon =
 			RE::TESForm::LookupByEditorID<RE::TESObjectWEAP>("DaedricWarhammer");
 
+		instance->_minGauntlet =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorHideGauntlets");
+
+		instance->_maxGauntlet =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricGauntlets");
+
+		instance->_minShield =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorHideShield");
+
+		instance->_maxShield =
+			RE::TESForm::LookupByEditorID<RE::TESObjectARMO>("ArmorDaedricShield");
+
+		// Weapon Cache Logging
 		if (instance->_minWeapon) {
 			logger::info(
 				"[Weapon Cache Min] Name={} Damage={} Weight={}",
@@ -37,7 +52,7 @@ public:
 				instance->_minWeapon->GetAttackDamage(),
 				instance->_minWeapon->GetWeight());
 		} else {
-			logger::info("[Weapon Cache Min] NULL");
+			logger::error("[Weapon Cache Min] NULL");
 		}
 
 		if (instance->_maxWeapon) {
@@ -47,8 +62,78 @@ public:
 				instance->_maxWeapon->GetAttackDamage(),
 				instance->_maxWeapon->GetWeight());
 		} else {
-			logger::info("[Weapon Cache Max] NULL");
+			logger::error("[Weapon Cache Max] NULL");
 		}
+
+		// Gauntlet Cache Logging
+		if (instance->_minGauntlet) {
+			logger::info(
+				"[Gauntlet Cache Min] Name={} ArmorRating={} Weight={}",
+				instance->_minGauntlet->GetName(),
+				instance->_minGauntlet->GetArmorRating(),
+				instance->_minGauntlet->GetWeight());
+		} else {
+			logger::error("[Gauntlet Cache Min] NULL");
+		}
+
+		if (instance->_maxGauntlet) {
+			logger::info(
+				"[Gauntlet Cache Max] Name={} ArmorRating={} Weight={}",
+				instance->_maxGauntlet->GetName(),
+				instance->_maxGauntlet->GetArmorRating(),
+				instance->_maxGauntlet->GetWeight());
+		} else {
+			logger::error("[Gauntlet Cache Max] NULL");
+		}
+		// Shield Cache Logging
+		if (instance->_minShield) {
+			logger::info(
+				"[Shield Cache Min] Name={} ArmorRating={} Weight={}",
+				instance->_minShield->GetName(),
+				instance->_minShield->GetArmorRating(),
+				instance->_minShield->GetWeight());
+		} else {
+			logger::error("[Shield Cache Min] NULL");
+		}
+
+		if (instance->_maxShield) {
+			logger::info(
+				"[Shield Cache Max] Name={} ArmorRating={} Weight={}",
+				instance->_maxShield->GetName(),
+				instance->_maxShield->GetArmorRating(),
+				instance->_maxShield->GetWeight());
+		} else {
+			logger::error("[Shield Cache Max] NULL");
+		}
+
+		// ==========================
+		// Weapon Multiplier Cache
+		// ==========================
+
+		_weaponMultiplierCache.clear();
+
+		auto settings = Settings::GetSingleton();
+
+		auto& multipliers = settings->JSONSettings["Weapons"]["Multipliers"];
+
+		if (multipliers.is_object()) {
+			for (auto& [name, value] : multipliers.items()) {
+				float mult = value.get<float>();
+
+				_weaponMultiplierCache.emplace(name, mult);
+
+				logger::info(
+					"[Weapon Mult Cache] {} = {}",
+					name,
+					mult);
+			}
+		} else {
+			logger::error("[Weapon Mult Cache] JSON entry Weapons->Multipliers missing!");
+		}
+
+		logger::info(
+			"Cached {} weapon multipliers.",
+			_weaponMultiplierCache.size());
 	}
 
 	float GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreWeight = false);
@@ -56,7 +141,7 @@ public:
 	float CalculateProjectileStagger(RE::Actor* aggressor, RE::Projectile* projectile);
 	float ApplyArmorReduction(RE::Actor* target, float stagger);
 	float GetUnarmedDamage(RE::Actor* a_actor);
-	float GetShieldDamage(RE::TESObjectARMO* a_shield);
+	float GetBashDamage(RE::TESObjectARMO* a_shield);
 	float GetMiscDamage();
 	float ApplyAttackMultiplier(RE::HitData* hitData, float stagger);
 	float CalculateBashStagger(RE::Actor* aggressor);
@@ -85,11 +170,25 @@ protected:
 		}
 	};
 
+	// static void PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData);
+
 private:
+	// Weapon scaling baseline
 	RE::TESObjectWEAP* _minWeapon{ nullptr };
 	RE::TESObjectWEAP* _maxWeapon{ nullptr };
-	// static void PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData);
-	constexpr HitEventHandler() noexcept = default;
+
+	// Unarmed gauntlet scaling baseline
+	RE::TESObjectARMO* _minGauntlet{ nullptr };
+	RE::TESObjectARMO* _maxGauntlet{ nullptr };
+
+	// Shield bash scaling baseline
+	RE::TESObjectARMO* _minShield{ nullptr };
+	RE::TESObjectARMO* _maxShield{ nullptr };
+
+	// Cached JSON weapon multipliers
+	std::unordered_map<std::string, float> _weaponMultiplierCache;
+
+	HitEventHandler() noexcept = default;
 	HitEventHandler(const HitEventHandler&) = delete;
 	HitEventHandler(HitEventHandler&&) = delete;
 

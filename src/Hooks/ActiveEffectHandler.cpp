@@ -77,7 +77,7 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 		poiseDamage = ApplyMagicPoiseResistance(a_target, poiseDamage);
 	}
 
-	if (settings->Debug.LogMagicEffectCalcs) {
+	if (settings->Debug.LogMagicEffectCalcs && std::abs(poiseDamage) >= 1.0f) {
 		float resistMultiplier =
 			preResistDamage != 0.0f ? poiseDamage / preResistDamage : 1.0f;
 
@@ -144,7 +144,7 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(RE::Actor* a_target, float 
 			effectiveResist / 100.0f;
 
 		float curveStrength =
-			1.5f * settings->Damage.MagicResistanceMult;
+			1.5f * settings->Magic.ResistanceMult;
 
 		float r1 =
 			normalizedResist * curveStrength;
@@ -166,7 +166,7 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(RE::Actor* a_target, float 
 			-weakness;
 	}
 
-	if (settings->Debug.LogMagicEffectCalcs) {
+	if (settings->Debug.LogMagicEffectCalcs && a_damage >= 1.0f) {
 		logger::info(
 			"[Magic Poise Resist] Target={} Magic={} Fire={} Frost={} Shock={} Effective={} Reduction={} Mult={} Before={} After={}",
 			a_target->GetName(),

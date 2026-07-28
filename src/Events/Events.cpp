@@ -39,7 +39,7 @@ RE::BSEventNotifyControl cellLoadEventHandler::ProcessEvent(
 
 	if (!initialized) {
 		logger::info("Initializing HitEventHandler weapon cache...");
-		HitEventHandler::GetSingleton()->InitializeWeapons();
+		HitEventHandler::GetSingleton()->InitializeEquipmentCache();
 		initialized = true;
 	}
 

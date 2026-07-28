@@ -65,9 +65,12 @@ public:
 		float UnarmedMult{ 1.0f };
 		float NormalAttackMult{ 1.0 };
 		float PowerAttackMult{ 1.0f };
+		float TrapMult{ 3.0f };
 
 		float ToPCMult{ 1.0f };
 		float ToNPCMult{ 1.0f };
+		float BlockingMult{ 1.0f };
+		float MagicResistanceMult{ 1.0f };
 
 		float PoiseScaling{ 0.25f };
 

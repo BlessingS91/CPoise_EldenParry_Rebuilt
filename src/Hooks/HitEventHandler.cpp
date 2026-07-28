@@ -201,12 +201,21 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 {
 	auto settings = Settings::GetSingleton();
 
-	auto unarmedDamage = std::lerp(static_cast<float>(settings->JSONSettings["Weapons"]["Damage"]["HandToHandMelee"]), a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage), settings->Damage.UnarmedSkillContribution);
+	float damage = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage);
+
 	auto gauntlet = a_actor->GetWornArmor(RE::BGSBipedObjectForm::BipedObjectSlot::kHands);
 
-	return gauntlet ? std::lerp(unarmedDamage, unarmedDamage + gauntlet->weight, settings->Damage.GauntletWeightContribution) : unarmedDamage;
-}
+	if (gauntlet) {
+		damage = std::lerp(
+			damage,
+			damage + gauntlet->weight,
+			settings->Damage.GauntletWeightContribution);
+	}
 
+	float multiplier = settings->JSONSettings["Weapons"]["Multipliers"]["HandToHandMelee"];
+
+	return damage * multiplier;
+}
 float HitEventHandler::GetShieldDamage(RE::TESObjectARMO* a_shield)
 {
 	auto settings = Settings::GetSingleton();
@@ -255,6 +264,13 @@ float HitEventHandler::ApplyAttackMultiplier(RE::HitData* hitData, float stagger
 	if (!attackData) {
 		return stagger;
 	}
+
+	logger::info(
+		FMT_STRING("[Attack Info] EquipIndex={} Weapon={} Skill={} Flags={}"),
+		hitData->equipIndex,
+		hitData->weapon ? hitData->weapon->GetName() : "NONE",
+		magic_enum::enum_name(hitData->skill),
+		hitData->flags.underlying());
 
 	float staggerOffset = attackData->data.staggerOffset;
 
@@ -312,6 +328,9 @@ float HitEventHandler::CalculateBashStagger(RE::Actor* aggressor)
 
 float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 {
+	if (!target || stagger <= 0.0f) {
+		return stagger;
+	}
 	auto settings = Settings::GetSingleton();
 	// --- Pure Hyperbolic Armor Reduction (ARR) ---
 	float totalArmor = (std::max)(0.0f,
@@ -358,21 +377,32 @@ float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* 
 {
 	auto settings = Settings::GetSingleton();
 
-	float baseMult = 1.0f - hitData->percentBlocked;
+	float baseMult = (1.0f - hitData->percentBlocked);
+
+	// Global block poise tuning
+	baseMult *= settings->Damage.BlockingMult;
 
 	if (settings->Debug.LogArmorCalcs) {
-		logger::info(FMT_STRING(
-						 "Block Calc: PercentBlocked={} InitialBlockMult={}"),
+		logger::info(
+			FMT_STRING(
+				"Block Calc: PercentBlocked={} InitialBlockMult={} BlockPoiseMult={}"),
 			hitData->percentBlocked,
-			baseMult);
+			baseMult,
+			settings->Damage.BlockingMult);
 	}
 
-	PoiseAV::ApplyPerkEntryPoint(34, aggressor, target, &baseMult);
-	PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
+	if (aggressor) {
+		PoiseAV::ApplyPerkEntryPoint(34, aggressor, target, &baseMult);
+	}
+
+	if (target) {
+		PoiseAV::ApplyPerkEntryPoint(33, target, aggressor, &baseMult);
+	}
 
 	if (settings->Debug.LogArmorCalcs) {
-		logger::info(FMT_STRING(
-						 "Block Calc After Perks: FinalBlockMult={} StaggerBefore={} StaggerAfter={}"),
+		logger::info(
+			FMT_STRING(
+				"Block Calc After Perks: FinalBlockMult={} StaggerBefore={} StaggerAfter={}"),
 			baseMult,
 			stagger,
 			stagger * baseMult);
@@ -441,240 +471,142 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	// No Skill / Physical Damage
 	// ==========================
 	else if (hitData->skill == RE::ActorValue::kNone) {
-		logger::critical(
-			FMT_STRING(
-				"[kNone ENTER] Target={} Aggressor={} TotalDamage={} PhysicalDamage={} "
-				"Flags={} Source={} Weapon={}"),
-			target ? target->GetName() : "NULL",
-			aggressor ? aggressor->GetName() : "NULL",
-			hitData->totalDamage,
-			hitData->physicalDamage,
-			hitData->flags.underlying(),
-			sourceRef ? sourceRef->GetName() : "NULL",
-			hitData->weapon ? hitData->weapon->GetName() : "NULL");
+		if (settings->Debug.LogWeaponCalcs) {
+			logger::critical(
+				FMT_STRING(
+					"[kNone ENTER] Target={} Aggressor={} TotalDamage={} PhysicalDamage={} "
+					"Flags={} Source={} Weapon={}"),
+				target ? target->GetName() : "NULL",
+				aggressor ? aggressor->GetName() : "NULL",
+				hitData->totalDamage,
+				hitData->physicalDamage,
+				hitData->flags.underlying(),
+				sourceRef ? sourceRef->GetName() : "NULL",
+				hitData->weapon ? hitData->weapon->GetName() : "NULL");
+		}
 
 		// ==========================
-		// Environmental Damage
+		// Environment / Traps
 		// ==========================
 		if (!aggressor) {
-			logger::critical("[kNone ENVIRONMENTAL] No aggressor");
+			if (settings->Debug.LogWeaponCalcs) {
+				logger::info("[kNone BRANCH] ENVIRONMENT");
+			}
 
 			stagger =
-				hitData->physicalDamage *
-				settings->Damage.CreatureMult;
+				hitData->totalDamage *
+				settings->Damage.TrapMult;
 
-			logger::critical(
-				FMT_STRING(
-					"[kNone ENVIRONMENTAL RESULT] Physical={} Mult={} Final={}"),
-				hitData->physicalDamage,
-				settings->Damage.CreatureMult,
-				stagger);
-		}
-
-		// ==========================
-		// Actor Physical Hit
-		// ==========================
-		else {
-			logger::critical(
-				FMT_STRING(
-					"[kNone ACTOR] Aggressor={} FormID={:08X}"),
-				aggressor->GetName(),
-				aggressor->GetFormID());
-
-			auto race = aggressor->GetRace();
-
-			logger::critical(
-				FMT_STRING(
-					"[kNone ACTOR RACE] Race={}"),
-				race ? race->GetName() : "NULL");
-
-			logger::critical("[kNone] Before GetEquippedObject LEFT");
-
-			auto leftHand = aggressor->GetEquippedObject(true);
-
-			logger::critical("[kNone] After GetEquippedObject LEFT");
-
-			logger::critical("[kNone] Before GetEquippedObject RIGHT");
-
-			auto rightHand = aggressor->GetEquippedObject(false);
-
-			logger::critical("[kNone] After GetEquippedObject RIGHT");
-
-			logger::critical(
-				FMT_STRING(
-					"[kNone EQUIPMENT] "
-					"Left={} LeftID={:08X} LeftType={} "
-					"Right={} RightID={:08X} RightType={}"),
-				leftHand ? leftHand->GetName() : "NULL",
-				leftHand ? leftHand->GetFormID() : 0,
-				leftHand ? magic_enum::enum_name(leftHand->GetFormType()) : "NULL",
-				rightHand ? rightHand->GetName() : "NULL",
-				rightHand ? rightHand->GetFormID() : 0,
-				rightHand ? magic_enum::enum_name(rightHand->GetFormType()) : "NULL");
-
-			RE::TESObjectARMO* shield = nullptr;
-
-			// ==========================
-			// Left Hand Shield Check
-			// ==========================
-			if (leftHand) {
-				logger::critical(
+			if (settings->Debug.LogWeaponCalcs) {
+				logger::info(
 					FMT_STRING(
-						"[kNone LEFT CHECK] FormType={}"),
-					magic_enum::enum_name(leftHand->GetFormType()));
-
-				if (leftHand->GetFormType() == RE::FormType::Armor) {
-					auto armor = leftHand->As<RE::TESObjectARMO>();
-
-					logger::critical(
-						FMT_STRING(
-							"[kNone LEFT ARMOR] Armor={} IsNull={}"),
-						armor ? armor->GetName() : "NULL",
-						armor == nullptr);
-
-					if (armor && armor->IsShield()) {
-						logger::critical(
-							"[kNone LEFT SHIELD FOUND] {}",
-							armor->GetName());
-
-						shield = armor;
-					}
-				}
-			}
-
-			// ==========================
-			// Right Hand Shield Check
-			// ==========================
-			if (!shield && rightHand) {
-				logger::critical(
-					FMT_STRING(
-						"[kNone RIGHT CHECK] FormType={}"),
-					magic_enum::enum_name(rightHand->GetFormType()));
-
-				if (rightHand->GetFormType() == RE::FormType::Armor) {
-					auto armor = rightHand->As<RE::TESObjectARMO>();
-
-					logger::critical(
-						FMT_STRING(
-							"[kNone RIGHT ARMOR] Armor={} IsNull={}"),
-						armor ? armor->GetName() : "NULL",
-						armor == nullptr);
-
-					if (armor && armor->IsShield()) {
-						logger::critical(
-							"[kNone RIGHT SHIELD FOUND] {}",
-							armor->GetName());
-
-						shield = armor;
-					}
-				}
-			}
-
-			// ==========================
-			// Shield Strike
-			// ==========================
-			if (shield) {
-				logger::critical(
-					"[kNone BRANCH] SHIELD STRIKE");
-
-				float shieldDamage =
-					GetShieldDamage(shield);
-
-				stagger =
-					shieldDamage *
-					settings->Damage.BashMult;
-
-				logger::critical(
-					FMT_STRING(
-						"[Shield Result] Shield={} Weight={} "
-						"ShieldDamage={} BashMult={} Final={}"),
-					shield->GetName(),
-					shield->weight,
-					shieldDamage,
-					settings->Damage.BashMult,
+						"[Environment Result] TotalDamage={} PhysicalDamage={} TrapMult={} Final={}"),
+					hitData->totalDamage,
+					hitData->physicalDamage,
+					settings->Damage.TrapMult,
 					stagger);
 			}
+		}
 
-			// ==========================
-			// Creature
-			// ==========================
-			else {
-				bool creature = IsCreature(aggressor);
+		// ==========================
+		// Creature
+		// ==========================
+		else if (IsCreature(aggressor)) {
+			RE::TESRace* race = nullptr;
+			float        unarmedDamage = 0.0f;
 
-				logger::critical(
+			if (settings->Debug.LogWeaponCalcs) {
+				race = aggressor->GetRace();
+				unarmedDamage = aggressor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage);
+			}
+
+			if (settings->Debug.LogWeaponCalcs) {
+				logger::info(
 					FMT_STRING(
-						"[kNone CREATURE CHECK] Result={}"),
-					creature);
+						"[Unarmed Data] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={}"),
+					aggressor->GetName(),
+					race ? race->GetName() : "NULL",
+					hitData->weapon ? hitData->weapon->GetName() : "NONE",
+					unarmedDamage,
+					hitData->physicalDamage);
+			}
+			stagger = hitData->physicalDamage *
+			          settings->Damage.CreatureMult;
 
-				if (creature) {
-					logger::critical(
-						"[kNone BRANCH] CREATURE ATTACK");
+			if (settings->Debug.LogWeaponCalcs) {
+				logger::info(
+					FMT_STRING(
+						"[Creature Result] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={} Mult={} Final={}"),
+					aggressor->GetName(),
+					race ? race->GetName() : "NULL",
+					hitData->weapon ? hitData->weapon->GetName() : "NONE",
+					unarmedDamage,
+					hitData->physicalDamage,
+					settings->Damage.CreatureMult,
+					stagger);
+			}
+		}
 
-					stagger =
-						hitData->physicalDamage *
-						settings->Damage.CreatureMult;
+		// ==========================
+		// Humanoid Unarmed
+		// ==========================
+		else {
+			RE::TESRace* race = nullptr;
+			float        unarmedDamage = 0.0f;
 
-					logger::critical(
-						FMT_STRING(
-							"[Creature Result] Physical={} Mult={} Final={}"),
-						hitData->physicalDamage,
-						settings->Damage.CreatureMult,
-						stagger);
-				}
+			if (settings->Debug.LogWeaponCalcs) {
+				race = aggressor->GetRace();
+				unarmedDamage =
+					aggressor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage);
 
-				// ==========================
-				// Unknown Actor
-				// ==========================
-				else {
-					logger::critical(
-						"[kNone BRANCH] UNKNOWN ACTOR");
+				logger::info(
+					FMT_STRING(
+						"[Unarmed Data] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={}"),
+					aggressor->GetName(),
+					race ? race->GetName() : "NULL",
+					hitData->weapon ? hitData->weapon->GetName() : "NONE",
+					unarmedDamage,
+					hitData->physicalDamage);
+			}
 
-					logger::critical(
-						FMT_STRING(
-							"[Unknown kNone] Target={} Aggressor={} "
-							"TotalDamage={} PhysicalDamage={} Flags={} Source={}"),
-						target ? target->GetName() : "NULL",
-						aggressor ? aggressor->GetName() : "NULL",
-						hitData->totalDamage,
-						hitData->physicalDamage,
-						hitData->flags.underlying(),
-						sourceRef ? sourceRef->GetName() : "NULL");
+			stagger = GetUnarmedDamage(aggressor);
 
-					stagger = 0.0f;
-				}
+			if (settings->Debug.LogWeaponCalcs) {
+				logger::info(
+					FMT_STRING(
+						"[Unarmed Result] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={} Final={}"),
+					aggressor->GetName(),
+					race ? race->GetName() : "NULL",
+					hitData->weapon ? hitData->weapon->GetName() : "NONE",
+					unarmedDamage,
+					hitData->physicalDamage,
+					stagger);
 			}
 		}
 	}
 
 	// ==========================
-	// Unknown Attack
+	// Poise Mitigation Calcs
 	// ==========================
-	else {
-		logger::debug("Unknown attack type");
-		return 0.0f;
-	}
-
-	// Attack Multiplier
 	stagger = ApplyAttackMultiplier(hitData, stagger);
 
-	// Armor Multipliers
 	stagger = ApplyArmorReduction(target, stagger);
 
-	// Blocking Multiplier
-	stagger = ApplyBlockingMultiplier(hitData, aggressor, target, stagger);
+	stagger = ApplyBlockingMultiplier(
+		hitData,
+		aggressor,
+		target,
+		stagger);
 
-	// 			stagger *= block_score;
-	// 		}
-	// 	}
-	// }
-	//Final Log
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
-			FMT_STRING("[RecalculateStagger END] Target={} Aggressor={} FinalStagger={}"),
+			FMT_STRING(
+				"[RecalculateStagger END] Target={} Aggressor={} FinalStagger={}"),
 			target ? target->GetName() : "NULL",
-			aggressor ? aggressor->GetName() : "NULL",
+			aggressor ? aggressor->GetName() : "ENVIRONMENT",
 			stagger);
 	}
+
 	return stagger;
 }
 
@@ -685,55 +617,58 @@ void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 	}
 
 	auto settings = Settings::GetSingleton();
-
-	if (settings->Debug.LogStaggerCalcs) {
-		logger::info(
-			FMT_STRING(
-				"[PreProcessHit] Target={} Aggressor={} Weapon={} Damage={} Flags={} Skill={} PhysicalDamage={}"),
-			target ? target->GetName() : "NULL",
-			hitData->aggressor ? hitData->aggressor.get()->GetName() : "NULL",
-			hitData->weapon && hitData->weapon->GetFormType() == RE::FormType::Weapon ?
-				hitData->weapon->GetName() :
-				(hitData->weapon ? "<NonWeapon>" : "NULL"),
-			hitData->totalDamage,
-			hitData->flags.underlying(),
-			std::string(magic_enum::enum_name(hitData->skill)),
-			hitData->physicalDamage);
-	}
-
-	// Get the actor responsible for the hit.
 	auto poiseAV = PoiseAV::GetSingleton();
-	auto aggressor = hitData->aggressor ? hitData->aggressor.get().get() : nullptr;
+
+	auto aggressor =
+		hitData->aggressor ?
+			hitData->aggressor.get().get() :
+			nullptr;
 
 	// Actor cannot receive poise damage
 	if (!poiseAV->CanDamageActor(target)) {
 		return;
 	}
-	// No attacker = environmental hit, skip for now
-	if (!aggressor) {
+
+	// Skip lethal hits
+	if (target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= hitData->totalDamage) {
+		hitData->stagger = 0;
 		return;
 	}
-	if (!(target->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) <= hitData->totalDamage)) {
-		auto poiseDamage = RecalculateStagger(target, aggressor, hitData);
 
-		if (settings->Debug.LogStaggerCalcs) {
-			logger::info(
-				FMT_STRING(
-					"[PreProcessHit - End] Target={} Aggressor={} HitData={} Damage={}"),
-				target->GetName(),
-				aggressor ? aggressor->GetName() : "NULL",
-				fmt::ptr(hitData),
-				poiseDamage);
-		}
-
-		poiseAV->DamageAndCheckPoise(target, aggressor, poiseDamage, hitData);
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[PreProcessHit START] Target={} Aggressor={} TotalDamage={} PhysicalDamage={} Skill={}"),
+			target->GetName(),
+			aggressor ? aggressor->GetName() : "ENVIRONMENT",
+			hitData->totalDamage,
+			hitData->physicalDamage,
+			magic_enum::enum_name(hitData->skill));
 	}
 
-	// Disable Skyrim's vanilla stagger calculation.
-	// This system replaces it with the custom poise-based stagger system above.
+	auto poiseDamage = RecalculateStagger(target, aggressor, hitData);
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[PreProcessHit - End] Target={} Aggressor={} HitData={} Damage={}"),
+			target->GetName(),
+			aggressor ? aggressor->GetName() : "NULL",
+			fmt::ptr(hitData),
+			poiseDamage);
+	}
+
+	if (poiseDamage > 0.0f) {
+		poiseAV->DamageAndCheckPoise(
+			target,
+			aggressor,
+			poiseDamage,
+			hitData);
+	}
+
+	// Disable Skyrim vanilla stagger calculation
 	hitData->stagger = 0;
 }
-
 // void HitEventHandler::PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData)
 // {
 // 	if (!a_precisionHitData.target || !a_precisionHitData.target->Is(RE::FormType::ActorCharacter)) {

@@ -25,6 +25,7 @@ public:
 
 	inline static const char* g_avName = "Poise";
 
+	float ApplyDamageModifiers(RE::Actor* a_aggressor, RE::Actor* a_target, float a_damage);
 	bool  CanDamageActor(RE::Actor* a_actor);
 	float GetBaseActorValue(RE::Actor* a_actor);
 	float Score_GetBaseActorValue(RE::Actor* a_actor);

@@ -124,6 +124,12 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Damage.ToNPCMult = static_cast<float>(
 		ini.GetValue("Damage", "ToNPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToNPCMult", Damage.ToNPCMult) : ini.GetDoubleValue("General Damage Settings", "NPC Multiplier", Damage.ToNPCMult));
 
+	Damage.BlockingMult = static_cast<float>(
+		ini.GetValue("Damage", "BlockingMult", nullptr) ? ini.GetDoubleValue("Damage", "BlockingMult", Damage.BlockingMult) : ini.GetDoubleValue("General Damage Settings", "Blocking Multiplier", Damage.BlockingMult));
+
+	Damage.MagicResistanceMult = static_cast<float>(
+		ini.GetValue("Damage", "MagicResistanceMult", nullptr) ? ini.GetDoubleValue("Damage", "MagicResistanceMult", Damage.MagicResistanceMult) : ini.GetDoubleValue("General Damage Settings", "Magic Resistance Multiplier", Damage.MagicResistanceMult));
+
 	Damage.PoiseScaling = static_cast<float>(
 		ini.GetValue("Damage", "PoiseScaling", nullptr) ? ini.GetDoubleValue("Damage", "PoiseScaling", Damage.PoiseScaling) : ini.GetDoubleValue("General Damage Settings", "Poise Scaling", Damage.PoiseScaling));
 
@@ -137,6 +143,8 @@ void Settings::LoadINI(const wchar_t* a_path)
 		ini.GetValue("Damage", "UnarmedSkillContribution", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Skill Contribution", Damage.UnarmedSkillContribution));
 
 	Damage.AttackOfOpportunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOpportunityMult", 1.5));
+
+	Damage.TrapMult = static_cast<float>(ini.GetDoubleValue("Damage", "TrapMult", 3.0));
 
 	// Impact Thresholds
 	Damage.NormalImpactThreshold = static_cast<float>(
@@ -199,16 +207,20 @@ void Settings::LoadINI(const wchar_t* a_path)
 		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
 	logger::info(FMT_STRING(
 					 "  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} "
-					 "CreatureMult={} MeleeMult={} UnarmedMult={} NormalAttackMult={} PowerAttackMult={}"),
+					 "CreatureMult={} TrapMult={} MeleeMult={} UnarmedMult={} "
+					 "NormalAttackMult={} PowerAttackMult={} BlockingMult={} MagicResistanceMult={}"),
 		Damage.BashMult,
 		Damage.ArrowDamageMult,
 		Damage.BowDrawSpeedMult,
 		Damage.CrossbowMult,
 		Damage.CreatureMult,
+		Damage.TrapMult,
 		Damage.MeleeMult,
 		Damage.UnarmedMult,
 		Damage.NormalAttackMult,
-		Damage.PowerAttackMult);
+		Damage.PowerAttackMult,
+		Damage.BlockingMult,
+		Damage.MagicResistanceMult);
 	logger::info(FMT_STRING("  [Impact Thresholds] Normal={} Powerful={} Seismic={}"),
 		Damage.NormalImpactThreshold, Damage.PowerfulImpactThreshold, Damage.SeismicImpactThreshold);
 	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),

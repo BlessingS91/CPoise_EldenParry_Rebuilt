@@ -9,6 +9,30 @@
 #include <limits>
 //#undef min
 
+float PoiseAV::ApplyDamageModifiers(RE::Actor* a_aggressor, RE::Actor* a_target, float a_damage)
+{
+	auto settings = Settings::GetSingleton();
+
+	if (!a_aggressor || !a_target) {
+		return a_damage;
+	}
+
+	float baseMult = 1.0f;
+
+	ApplyPerkEntryPoint(34, a_aggressor, a_target, &baseMult);
+	ApplyPerkEntryPoint(33, a_target, a_aggressor, &baseMult);
+
+	a_damage *= baseMult;
+
+	if (a_target->IsPlayerRef()) {
+		a_damage *= settings->Damage.ToPCMult;
+	} else {
+		a_damage *= settings->Damage.ToNPCMult;
+	}
+
+	return a_damage;
+}
+
 bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 {
 	auto settings = Settings::GetSingleton();

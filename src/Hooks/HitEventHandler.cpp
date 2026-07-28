@@ -41,7 +41,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 	}
 
 	// 1. Get settings singleton for configuration multipliers
-	float weightContrib = settings ? settings->Damage.WeightContribution : 0.005f;
+	float weightContrib = settings ? settings->Weapon.WeightContribution : 0.005f;
 
 	// 2. Get base attack damage stats from the cached baseline weapons
 	float minDamage = _minWeapon->GetAttackDamage();
@@ -114,7 +114,7 @@ float HitEventHandler::CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjec
 
 	if (weapon->IsHandToHandMelee()) {
 		float unarmedDamage = GetUnarmedDamage(aggressor);
-		return unarmedDamage * settings->Damage.UnarmedMult;
+		return unarmedDamage * settings->Unarmed.Multiplier;
 	}
 
 	float weaponDamage = GetWeaponDamage(weapon);
@@ -123,11 +123,11 @@ float HitEventHandler::CalculateWeaponStagger(RE::Actor* aggressor, RE::TESObjec
 		logger::info(
 			FMT_STRING("[Melee Mult] Before={} Mult={} After={}"),
 			weaponDamage,
-			settings->Damage.MeleeMult,
-			weaponDamage * settings->Damage.MeleeMult);
+			settings->Weapon.MeleeMult,
+			weaponDamage * settings->Weapon.MeleeMult);
 	}
 
-	return weaponDamage * settings->Damage.MeleeMult;
+	return weaponDamage * settings->Weapon.MeleeMult;
 }
 
 float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Projectile* projectile)
@@ -149,7 +149,7 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 		drawFactor =
 			1.0f +
 			((1.0f / bowSpeed) - 1.0f) *
-				settings->Damage.BowDrawSpeedMult;
+				settings->Weapon.BowDrawSpeedMult;
 	}
 
 	float arrowDamage = 0.0f;
@@ -160,7 +160,7 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 	}
 
 	float arrowContribution =
-		arrowDamage * settings->Damage.ArrowDamageMult;
+		arrowDamage * settings->Weapon.ArrowDamageMult;
 
 	float stagger =
 		(bowDamage * drawFactor) +
@@ -188,8 +188,8 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 			bowSpeed,
 			drawFactor,
 			arrowDamage,
-			settings->Damage.ArrowDamageMult,
-			arrowDamage * settings->Damage.ArrowDamageMult,
+			settings->Weapon.ArrowDamageMult,
+			arrowDamage * settings->Weapon.ArrowDamageMult,
 			bowBonus,
 			stagger);
 	}
@@ -201,27 +201,187 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 {
 	auto settings = Settings::GetSingleton();
 
-	float damage = a_actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage);
-
-	auto gauntlet = a_actor->GetWornArmor(RE::BGSBipedObjectForm::BipedObjectSlot::kHands);
-
-	if (gauntlet) {
-		damage = std::lerp(
-			damage,
-			damage + gauntlet->weight,
-			settings->Damage.GauntletWeightContribution);
+	if (!a_actor) {
+		return 0.0f;
 	}
 
-	float multiplier = settings->JSONSettings["Weapons"]["Multipliers"]["HandToHandMelee"];
+	// Base Skyrim unarmed damage
+	float unarmedDamage =
+		a_actor->AsActorValueOwner()->GetActorValue(
+			RE::ActorValue::kUnarmedDamage);
 
-	return damage * multiplier;
+	if (unarmedDamage <= 0.0f) {
+		return 0.0f;
+	}
+
+	// Same normalization curve as weapons
+	float minDamage = _minWeapon->GetAttackDamage();
+	float maxDamage = _maxWeapon->GetAttackDamage() * 7.0f;
+
+	float normalizedDamage =
+		std::clamp(
+			(unarmedDamage - minDamage) /
+				(maxDamage - minDamage),
+			0.0f,
+			1.0f);
+
+	float r1 = normalizedDamage * 2.5f;
+	float r2 = r1 / (1.0f + r1);
+
+	float poiseDamage =
+		std::lerp(
+			20.0f,
+			75.0f,
+			r2);
+
+	// ==========================
+	// Gauntlet Weight
+	// ==========================
+	auto gauntlet =
+		a_actor->GetWornArmor(
+			RE::BGSBipedObjectForm::BipedObjectSlot::kHands);
+
+	if (gauntlet) {
+		poiseDamage +=
+			gauntlet->weight *
+			settings->Unarmed.GauntletWeightContribution;
+	}
+
+	// ==========================
+	// Skill Scaling
+	// ==========================
+	float skillValue = 0.0f;
+
+	auto actorValueOwner = a_actor->AsActorValueOwner();
+
+	if (actorValueOwner) {
+		switch (settings->Unarmed.SkillType) {
+		case 0:  // None
+			break;
+
+		case 1:  // One-Handed
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kOneHanded);
+			break;
+
+		case 2:  // Two-Handed
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kTwoHanded);
+			break;
+
+		case 3:  // Archery
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kArchery);
+			break;
+
+		case 4:  // Block
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kBlock);
+			break;
+
+		case 5:  // Heavy Armor
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kHeavyArmor);
+			break;
+
+		case 6:  // Light Armor
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kLightArmor);
+			break;
+
+		case 7:  // Pickpocket
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kPickpocket);
+			break;
+
+		case 8:  // Lockpicking
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kLockpicking);
+			break;
+
+		case 9:  // Sneak
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kSneak);
+			break;
+
+		case 10:  // Alchemy
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kAlchemy);
+			break;
+
+		case 11:  // Speech
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kSpeech);
+			break;
+
+		case 12:  // Alteration
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kAlteration);
+			break;
+
+		case 13:  // Conjuration
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kConjuration);
+			break;
+
+		case 14:  // Destruction
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kDestruction);
+			break;
+
+		case 15:  // Illusion
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kIllusion);
+			break;
+
+		case 16:  // Restoration
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kRestoration);
+			break;
+
+		case 17:  // Enchanting
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kEnchanting);
+			break;
+
+		case 18:  // Smithing
+			skillValue = actorValueOwner->GetActorValue(RE::ActorValue::kSmithing);
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	float skillMultiplier =
+		1.0f +
+		(skillValue / 100.0f) *
+			settings->Unarmed.SkillContribution;
+
+	poiseDamage *= skillMultiplier;
+
+	// ==========================
+	// Final H2H multiplier
+	// ==========================
+	float multiplier = 1.0f;
+
+	auto jsonMultiplier =
+		settings->JSONSettings["Weapons"]["Multipliers"]["HandToHandMelee"];
+
+	if (jsonMultiplier != nullptr) {
+		multiplier = jsonMultiplier.get<float>();
+	}
+
+	poiseDamage *= multiplier;
+
+	if (settings->Debug.LogWeaponCalcs) {
+		logger::info(
+			"[Unarmed Calc] Actor={} AV={} Normalized={} Curve={} Skill={} SkillMult={} Gauntlet={} Final={}",
+			a_actor->GetName(),
+			unarmedDamage,
+			normalizedDamage,
+			r2,
+			skillValue,
+			skillMultiplier,
+			gauntlet ? gauntlet->weight : 0.0f,
+			poiseDamage);
+	}
+
+	return std::clamp(
+		poiseDamage,
+		0.0f,
+		200.0f);
 }
+
 float HitEventHandler::GetShieldDamage(RE::TESObjectARMO* a_shield)
 {
 	auto settings = Settings::GetSingleton();
 	auto shieldDamage = settings->JSONSettings["Weapons"]["Damage"]["Shield"];
 	if (shieldDamage != nullptr)
-		return std::lerp(static_cast<float>(shieldDamage), a_shield->weight, settings->Damage.WeightContribution);
+		return std::lerp(static_cast<float>(shieldDamage), a_shield->weight, settings->Weapon.WeightContribution);
 	return a_shield->weight;
 }
 
@@ -278,10 +438,10 @@ float HitEventHandler::ApplyAttackMultiplier(RE::HitData* hitData, float stagger
 
 	if (staggerOffset == 0.0f) {
 		// Normal attack
-		attackMult = settings->Damage.NormalAttackMult;
+		attackMult = settings->Attack.NormalAttackMult;
 	} else if (staggerOffset == 1.0f) {
 		// Power attack
-		attackMult = settings->Damage.PowerAttackMult;
+		attackMult = settings->Attack.PowerAttackMult;
 	}
 
 	if (settings->Debug.LogStaggerCalcs) {
@@ -304,7 +464,7 @@ float HitEventHandler::CalculateBashStagger(RE::Actor* aggressor)
 
 	auto settings = Settings::GetSingleton();
 
-	float bashMultiplier = settings->Damage.BashMult;
+	float bashMultiplier = settings->Blocking.BashMult;
 
 	if (const auto perk = RE::TESForm::LookupByEditorID<RE::BGSPerk>(
 			Milf::GetSingleton()->perks.SkullRattler_Perk);
@@ -380,7 +540,7 @@ float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* 
 	float baseMult = (1.0f - hitData->percentBlocked);
 
 	// Global block poise tuning
-	baseMult *= settings->Damage.BlockingMult;
+	baseMult *= settings->Blocking.BlockingMult;
 
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
@@ -388,7 +548,7 @@ float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* 
 				"Block Calc: PercentBlocked={} InitialBlockMult={} BlockPoiseMult={}"),
 			hitData->percentBlocked,
 			baseMult,
-			settings->Damage.BlockingMult);
+			settings->Blocking.BlockingMult);
 	}
 
 	if (aggressor) {
@@ -461,7 +621,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 
 			stagger =
 				GetUnarmedDamage(aggressor) *
-				settings->Damage.UnarmedMult;
+				settings->Unarmed.Multiplier;
 		} else {
 			stagger =
 				CalculateWeaponStagger(aggressor, weapon);
@@ -495,7 +655,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 
 			stagger =
 				hitData->totalDamage *
-				settings->Damage.TrapMult;
+				settings->Environment.TrapMult;
 
 			if (settings->Debug.LogWeaponCalcs) {
 				logger::info(
@@ -503,7 +663,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 						"[Environment Result] TotalDamage={} PhysicalDamage={} TrapMult={} Final={}"),
 					hitData->totalDamage,
 					hitData->physicalDamage,
-					settings->Damage.TrapMult,
+					settings->Environment.TrapMult,
 					stagger);
 			}
 		}
@@ -531,7 +691,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 					hitData->physicalDamage);
 			}
 			stagger = hitData->physicalDamage *
-			          settings->Damage.CreatureMult;
+			          settings->Creature.DamageMultiplier;
 
 			if (settings->Debug.LogWeaponCalcs) {
 				logger::info(
@@ -542,7 +702,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 					hitData->weapon ? hitData->weapon->GetName() : "NONE",
 					unarmedDamage,
 					hitData->physicalDamage,
-					settings->Damage.CreatureMult,
+					settings->Creature.DamageMultiplier,
 					stagger);
 			}
 		}

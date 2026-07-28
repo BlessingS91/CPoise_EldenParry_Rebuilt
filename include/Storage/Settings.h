@@ -1,8 +1,8 @@
 #pragma once
 
 #include <SimpleIni.h>
-
 #include <nlohmann/json.hpp>
+
 using json = nlohmann::json;
 
 namespace RE
@@ -27,12 +27,16 @@ public:
 		return &singleton;
 	}
 
+	// ==========================
+	// Difficulty
+	// ==========================
 	float fDiffMultHPByPCVE;
 	float fDiffMultHPByPCE;
 	float fDiffMultHPByPCN;
 	float fDiffMultHPByPCH;
 	float fDiffMultHPByPCVH;
 	float fDiffMultHPByPCL;
+
 	float fDiffMultHPToPCVE;
 	float fDiffMultHPToPCE;
 	float fDiffMultHPToPCN;
@@ -43,74 +47,185 @@ public:
 	struct
 	{
 		int StaggerMode{ 1 };
+
 	} Modes;
 
+	// ==========================
+	// Poise Health
+	// ==========================
 	struct
 	{
 		float BaseMult{ 100.0f };
+
 		float MassMult{ 1.0f };
+
 		float ArmorMult{ 0.020f };
+
 		float ArmorMultMin{ 0.35f };
+
 		float RegenRate{ 0.045f };
+
 	} Health;
 
+	// ==========================
+	// Weapon Damage
+	// ==========================
+	struct
+	{
+		float MeleeMult{ 1.0f };
+
+		float WeightContribution{ 0.005f };
+
+		float BowDrawSpeedMult{ 1.0f };
+
+		float ArrowDamageMult{ 0.25f };
+
+		float CrossbowMult{ 1.15f };
+
+	} Weapon;
+
+	// ==========================
+	// Unarmed Damage
+	// ==========================
+	struct
+	{
+		float Multiplier{ 0.95f };
+
+		float GauntletWeightContribution{ 0.05f };
+
+		float SkillContribution{ 0.40f };
+
+		int SkillType{ 0 };
+
+	} Unarmed;
+
+	// ==========================
+	// Creature Damage
+	// ==========================
+	struct
+	{
+		float DamageMultiplier{ 1.5f };
+
+	} Creature;
+
+	// ==========================
+	// Bash / Blocking
+	// ==========================
 	struct
 	{
 		float BashMult{ 1.0f };
-		float ArrowDamageMult{ 0.25f };
-		float BowDrawSpeedMult{ 1.0f };
-		float CrossbowMult = 1.15f;
-		float CreatureMult{ 1.5f };
-		float MeleeMult{ 1.0f };
-		float UnarmedMult{ 1.0f };
-		float NormalAttackMult{ 1.0 };
-		float PowerAttackMult{ 1.0f };
-		float TrapMult{ 3.0f };
 
-		float ToPCMult{ 1.0f };
-		float ToNPCMult{ 1.0f };
 		float BlockingMult{ 1.0f };
-		float MagicResistanceMult{ 1.0f };
 
-		float PoiseScaling{ 0.25f };
+	} Blocking;
 
-		float WeightContribution{ 0.005f };
-		float GauntletWeightContribution{ 0.05f };
-		float UnarmedSkillContribution{ 0.4f };
+	// ==========================
+	// Attack Modifiers
+	// ==========================
+	struct
+	{
+		float NormalAttackMult{ 1.0f };
+
+		float PowerAttackMult{ 1.0f };
+
 		float AttackOfOpportunityMult{ 1.5f };
 
-		float NormalImpactThreshold{ 0.25f };
-		float PowerfulImpactThreshold{ 0.50f };
-		float SeismicImpactThreshold{ 0.75f };
+	} Attack;
 
-	} Damage;
+	// ==========================
+	// Magic Damage
+	// ==========================
+	struct
+	{
+		float ResistanceMult{ 1.0f };
+
+	} Magic;
+
+	// ==========================
+	// Environment / Traps
+	// ==========================
+	struct
+	{
+		float TrapMult{ 3.0f };
+
+	} Environment;
+
+	// ==========================
+	// NPC / Player Multipliers
+	// ==========================
+	struct
+	{
+		float ToPCMult{ 1.0f };
+
+		float ToNPCMult{ 1.0f };
+
+		// How much Skyrim difficulty damage multipliers affect poise damage
+		// 0.0 = ignore difficulty
+		// 0.25 = mild difficulty influence
+		// 0.5 = moderate difficulty influence
+		// 1.0 = full difficulty scaling
+		float DifficultyScaling{ 0.25f };
+
+	} Global;
+
+	// ==========================
+	// Impact Thresholds
+	// ==========================
+	struct
+	{
+		float Normal{ 0.25f };
+
+		float Powerful{ 0.50f };
+
+		float Seismic{ 0.75f };
+
+	} Impact;
 
 	struct
 	{
-		bool     SpecialBar{ true };
-		uint32_t SpecialBarNormalColor{ 0xFFFF00 };    // Normal poise bar color
-		uint32_t SpecialBarDepletedColor{ 0x808080 };  // Poise depleted color
+		bool SpecialBar{ true };
+
+		uint32_t SpecialBarNormalColor{ 0xFFFF00 };
+
+		uint32_t SpecialBarDepletedColor{ 0x808080 };
+
 	} TrueHUD;
 
 	struct DebugSettings
 	{
-		bool LogWeaponCalcs = false;
-		bool LogArmorCalcs = false;
-		bool LogMagicEffectCalcs = false;
-		bool LogStaggerCalcs = false;
-		bool LogActorCalcs = false;
+		bool LogWeaponCalcs{ false };
+
+		bool LogUnarmedCalcs{ false };
+
+		bool LogArmorCalcs{ false };
+
+		bool LogMagicEffectCalcs{ false };
+
+		bool LogStaggerCalcs{ false };
+
+		bool LogActorCalcs{ false };
+
 	} Debug;
 
 	json JSONSettings;
 
-	float GetDamageMultiplier(RE::Actor* a_aggressor, RE::Actor* a_target);
-	void  LoadGameSettings();
-	void  LoadINI(const wchar_t* a_path);
-	void  LoadJSON(const wchar_t* a_path);
-	void  LoadSettings();
+	float GetDamageMultiplier(
+		RE::Actor* a_aggressor,
+		RE::Actor* a_target);
+
+	void LoadGameSettings();
+
+	void LoadINI(
+		const wchar_t* a_path);
+
+	void LoadJSON(
+		const wchar_t* a_path);
+
+	void LoadSettings();
 
 private:
 	Settings() = default;
+
 	Settings(const Settings&) = delete;
 	Settings(Settings&&) = delete;
 

@@ -1,6 +1,6 @@
 #include "Storage/Settings.h"
-
 #include "UI/PoiseAVHUD.h"
+#include <fstream>
 
 float Settings::GetDamageMultiplier(RE::Actor* a_aggressor, RE::Actor* a_target)
 {
@@ -41,18 +41,27 @@ float Settings::GetDamageMultiplier(RE::Actor* a_aggressor, RE::Actor* a_target)
 void Settings::LoadGameSettings()
 {
 	auto gameSettingCollection = RE::GameSettingCollection::GetSingleton();
-	fDiffMultHPByPCVE = gameSettingCollection->GetSetting("fDiffMultHPByPCVE")->GetFloat();
-	fDiffMultHPByPCE = gameSettingCollection->GetSetting("fDiffMultHPByPCE")->GetFloat();
-	fDiffMultHPByPCN = gameSettingCollection->GetSetting("fDiffMultHPByPCN")->GetFloat();
-	fDiffMultHPByPCH = gameSettingCollection->GetSetting("fDiffMultHPByPCH")->GetFloat();
-	fDiffMultHPByPCVH = gameSettingCollection->GetSetting("fDiffMultHPByPCVH")->GetFloat();
-	fDiffMultHPByPCL = gameSettingCollection->GetSetting("fDiffMultHPByPCL")->GetFloat();
-	fDiffMultHPToPCVE = gameSettingCollection->GetSetting("fDiffMultHPToPCVE")->GetFloat();
-	fDiffMultHPToPCE = gameSettingCollection->GetSetting("fDiffMultHPToPCE")->GetFloat();
-	fDiffMultHPToPCN = gameSettingCollection->GetSetting("fDiffMultHPToPCN")->GetFloat();
-	fDiffMultHPToPCH = gameSettingCollection->GetSetting("fDiffMultHPToPCH")->GetFloat();
-	fDiffMultHPToPCVH = gameSettingCollection->GetSetting("fDiffMultHPToPCVH")->GetFloat();
-	fDiffMultHPToPCL = gameSettingCollection->GetSetting("fDiffMultHPToPCL")->GetFloat();
+	if (!gameSettingCollection)
+		return;
+
+	auto getSettingFloat = [gameSettingCollection](const char* a_name) {
+		auto setting = gameSettingCollection->GetSetting(a_name);
+		return setting ? setting->GetFloat() : 1.0f;
+	};
+
+	fDiffMultHPByPCVE = getSettingFloat("fDiffMultHPByPCVE");
+	fDiffMultHPByPCE = getSettingFloat("fDiffMultHPByPCE");
+	fDiffMultHPByPCN = getSettingFloat("fDiffMultHPByPCN");
+	fDiffMultHPByPCH = getSettingFloat("fDiffMultHPByPCH");
+	fDiffMultHPByPCVH = getSettingFloat("fDiffMultHPByPCVH");
+	fDiffMultHPByPCL = getSettingFloat("fDiffMultHPByPCL");
+
+	fDiffMultHPToPCVE = getSettingFloat("fDiffMultHPToPCVE");
+	fDiffMultHPToPCE = getSettingFloat("fDiffMultHPToPCE");
+	fDiffMultHPToPCN = getSettingFloat("fDiffMultHPToPCN");
+	fDiffMultHPToPCH = getSettingFloat("fDiffMultHPToPCH");
+	fDiffMultHPToPCVH = getSettingFloat("fDiffMultHPToPCVH");
+	fDiffMultHPToPCL = getSettingFloat("fDiffMultHPToPCL");
 }
 
 void Settings::LoadINI(const wchar_t* a_path)
@@ -65,179 +74,132 @@ void Settings::LoadINI(const wchar_t* a_path)
 		return;
 	}
 
+	auto getFloatVal = [&](const char* primarySec, const char* primaryKey, const char* altSec, const char* altKey, float defaultVal) -> float {
+		if (ini.GetValue(primarySec, primaryKey)) {
+			return static_cast<float>(ini.GetDoubleValue(primarySec, primaryKey, defaultVal));
+		}
+		if (ini.GetValue(altSec, altKey)) {
+			return static_cast<float>(ini.GetDoubleValue(altSec, altKey, defaultVal));
+		}
+		return defaultVal;
+	};
+
+	auto getBoolVal = [&](const char* primarySec, const char* primaryKey, const char* altSec, const char* altKey, bool defaultVal) -> bool {
+		if (ini.GetValue(primarySec, primaryKey)) {
+			return ini.GetBoolValue(primarySec, primaryKey, defaultVal);
+		}
+		if (ini.GetValue(altSec, altKey)) {
+			return ini.GetBoolValue(altSec, altKey, defaultVal);
+		}
+		return defaultVal;
+	};
+
 	// Modes
 	Modes.StaggerMode = static_cast<int>(ini.GetLongValue("Modes", "StaggerMode", Modes.StaggerMode));
 
 	// Health
-	Health.BaseMult = static_cast<float>(
-		ini.GetValue("Health", "BaseMult", nullptr) ? ini.GetDoubleValue("Health", "BaseMult", Health.BaseMult) : ini.GetDoubleValue("Health Settings", "Base Mult", Health.BaseMult));
+	Health.BaseMult = getFloatVal("Health", "BaseMult", "Health Settings", "Base Mult", Health.BaseMult);
+	Health.MassMult = getFloatVal("Health", "MassMult", "Health Settings", "Mass Mult", Health.MassMult);
+	Health.ArmorMult = getFloatVal("Health", "ArmorMult", "Health Settings", "Armor Mult", Health.ArmorMult);
+	Health.ArmorMultMin = getFloatVal("Health", "ArmorMultMin", "Health Settings", "Armor Mult Min", Health.ArmorMultMin);
+	Health.RegenRate = getFloatVal("Health", "RegenRate", "Health Settings", "Regen Rate", Health.RegenRate);
 
-	Health.MassMult = static_cast<float>(
-		ini.GetValue("Health", "BaseMult", nullptr) ? ini.GetDoubleValue("Health", "MassMult", Health.MassMult) : ini.GetDoubleValue("Health Settings", "Mass Mult", Health.MassMult));
+	// Weapon Damage
+	Weapon.MeleeMult = getFloatVal("Weapon", "MeleeMult", "Damage Settings", "Melee Mult", Weapon.MeleeMult);
+	Weapon.WeightContribution = getFloatVal("Weapon", "WeightContribution", "General Damage Settings", "Weight Contribution", Weapon.WeightContribution);
+	Weapon.BowDrawSpeedMult = getFloatVal("Weapon", "BowDrawSpeedMult", "Damage Settings", "Bow Draw Speed Mult", Weapon.BowDrawSpeedMult);
+	Weapon.ArrowDamageMult = getFloatVal("Weapon", "ArrowDamageMult", "Damage Settings", "Arrow Damage Mult", Weapon.ArrowDamageMult);
+	Weapon.CrossbowMult = getFloatVal("Weapon", "CrossbowMult", "Damage Settings", "Crossbow Mult", Weapon.CrossbowMult);
 
-	Health.ArmorMult = static_cast<float>(
-		ini.GetValue("Health", "ArmorMult", nullptr) ? ini.GetDoubleValue("Health", "ArmorMult", Health.ArmorMult) : ini.GetDoubleValue("Health Settings", "Armor Mult", Health.ArmorMult));
+	// Unarmed Damage
+	Unarmed.Multiplier = getFloatVal("Unarmed", "Multiplier", "Unarmed Damage Settings", "Unarmed Damage Mult", Unarmed.Multiplier);
+	Unarmed.GauntletWeightContribution = getFloatVal("Unarmed", "GauntletWeightContribution", "Unarmed Damage Settings", "Gauntlet Weight Contribution", Unarmed.GauntletWeightContribution);
+	Unarmed.SkillContribution = getFloatVal("Unarmed", "SkillContribution", "Unarmed Damage Settings", "Unarmed Skill Contribution", Unarmed.SkillContribution);
+	Unarmed.SkillType = static_cast<int>(ini.GetLongValue("Unarmed", "SkillType", Unarmed.SkillType));
 
-	Health.ArmorMultMin = static_cast<float>(
-		ini.GetValue("Health", "ArmorMultMin", nullptr) ? ini.GetDoubleValue("Health", "ArmorMultMin", Health.ArmorMultMin) : ini.GetDoubleValue("Health Settings", "Armor Mult Min", Health.ArmorMultMin));
+	// Creature Damage
+	Creature.DamageMultiplier = getFloatVal("Creature", "DamageMultiplier", "Damage Settings", "Creature Damage Multiplier", Creature.DamageMultiplier);
 
-	Health.RegenRate = static_cast<float>(
-		ini.GetValue("Health", "RegenRate", nullptr) ? ini.GetDoubleValue("Health", "RegenRate", Health.RegenRate) : ini.GetDoubleValue("Health Settings", "Regen Rate", Health.RegenRate));
+	// Bash / Blocking
+	Blocking.BashMult = getFloatVal("Blocking", "BashMult", "Damage Settings", "Bash Mult", Blocking.BashMult);
+	Blocking.BlockingMult = getFloatVal("Blocking", "BlockingMult", "General Damage Settings", "Blocking Multiplier", Blocking.BlockingMult);
 
-	// Damage
-	Damage.BashMult = static_cast<float>(
-		ini.GetValue("Damage", "BashMult", nullptr) ? ini.GetDoubleValue("Damage", "BashMult", Damage.BashMult) : ini.GetDoubleValue("Damage Settings", "Bash Mult", Damage.BashMult));
+	// Attack Modifiers
+	Attack.NormalAttackMult = getFloatVal("Attack", "NormalAttackMult", "Damage Settings", "Normal Attack Mult", Attack.NormalAttackMult);
+	Attack.PowerAttackMult = getFloatVal("Attack", "PowerAttackMult", "Damage Settings", "Power Attack Mult", Attack.PowerAttackMult);
+	Attack.AttackOfOpportunityMult = getFloatVal("Attack", "AttackOfOpportunityMult", "Damage", "AttackOfOpportunityMult", Attack.AttackOfOpportunityMult);
 
-	Damage.ArrowDamageMult = static_cast<float>(
-		ini.GetValue("Damage", "ArrowDamageMult", nullptr) ?
-			ini.GetDoubleValue("Damage", "ArrowDamageMult", Damage.ArrowDamageMult) :
-			ini.GetDoubleValue("Damage Settings", "Arrow Damage Mult", Damage.ArrowDamageMult));
+	// Magic Damage
+	Magic.ResistanceMult = getFloatVal("Magic", "ResistanceMult", "General Damage Settings", "Magic Resistance Multiplier", Magic.ResistanceMult);
 
-	Damage.BowDrawSpeedMult = static_cast<float>(
-		ini.GetValue("Damage", "BowDrawSpeedMult", nullptr) ?
-			ini.GetDoubleValue("Damage", "BowDrawSpeedMult", Damage.BowDrawSpeedMult) :
-			ini.GetDoubleValue("Damage Settings", "Bow Draw Speed Mult", Damage.BowDrawSpeedMult));
+	// Environment / Traps
+	Environment.TrapMult = getFloatVal("Environment", "TrapMult", "Damage", "TrapMult", Environment.TrapMult);
 
-	Damage.CrossbowMult = static_cast<float>(
-		ini.GetValue("Damage", "CrossbowMult", nullptr) ?
-			ini.GetDoubleValue("Damage", "CrossbowMult", Damage.CrossbowMult) :
-			ini.GetDoubleValue("Damage Settings", "Crossbow Mult", Damage.CrossbowMult));
-
-	Damage.CreatureMult = static_cast<float>(
-		ini.GetValue("Damage", "CreatureMult", nullptr) ? ini.GetDoubleValue("Damage", "CreatureMult", Damage.CreatureMult) : ini.GetDoubleValue("Damage Settings", "Creature Mult", Damage.CreatureMult));
-
-	Damage.MeleeMult = static_cast<float>(
-		ini.GetValue("Damage", "MeleeMult", nullptr) ? ini.GetDoubleValue("Damage", "MeleeMult", Damage.MeleeMult) : ini.GetDoubleValue("Damage Settings", "Melee Mult", Damage.MeleeMult));
-
-	Damage.UnarmedMult = static_cast<float>(
-		ini.GetValue("Damage", "UnarmedMult", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedMult", Damage.UnarmedMult) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Damage Mult", Damage.UnarmedMult));
-
-	Damage.NormalAttackMult = static_cast<float>(
-		ini.GetValue("Damage", "NormalAttackMult", nullptr) ? ini.GetDoubleValue("Damage", "NormalAttackMult", Damage.NormalAttackMult) : ini.GetDoubleValue("Damage Settings", "Normal Attack Mult", Damage.NormalAttackMult));
-
-	Damage.PowerAttackMult = static_cast<float>(
-		ini.GetValue("Damage", "PowerAttackMult", nullptr) ? ini.GetDoubleValue("Damage", "PowerAttackMult", Damage.PowerAttackMult) : ini.GetDoubleValue("Damage Settings", "Power Attack Mult", Damage.PowerAttackMult));
-
-	Damage.ToPCMult = static_cast<float>(
-		ini.GetValue("Damage", "ToPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToPCMult", Damage.ToPCMult) : ini.GetDoubleValue("General Damage Settings", "Player Multiplier", Damage.ToPCMult));
-
-	Damage.ToNPCMult = static_cast<float>(
-		ini.GetValue("Damage", "ToNPCMult", nullptr) ? ini.GetDoubleValue("Damage", "ToNPCMult", Damage.ToNPCMult) : ini.GetDoubleValue("General Damage Settings", "NPC Multiplier", Damage.ToNPCMult));
-
-	Damage.BlockingMult = static_cast<float>(
-		ini.GetValue("Damage", "BlockingMult", nullptr) ? ini.GetDoubleValue("Damage", "BlockingMult", Damage.BlockingMult) : ini.GetDoubleValue("General Damage Settings", "Blocking Multiplier", Damage.BlockingMult));
-
-	Damage.MagicResistanceMult = static_cast<float>(
-		ini.GetValue("Damage", "MagicResistanceMult", nullptr) ? ini.GetDoubleValue("Damage", "MagicResistanceMult", Damage.MagicResistanceMult) : ini.GetDoubleValue("General Damage Settings", "Magic Resistance Multiplier", Damage.MagicResistanceMult));
-
-	Damage.PoiseScaling = static_cast<float>(
-		ini.GetValue("Damage", "PoiseScaling", nullptr) ? ini.GetDoubleValue("Damage", "PoiseScaling", Damage.PoiseScaling) : ini.GetDoubleValue("General Damage Settings", "Poise Scaling", Damage.PoiseScaling));
-
-	Damage.WeightContribution = static_cast<float>(
-		ini.GetValue("Damage", "WeightContribution", nullptr) ? ini.GetDoubleValue("Damage", "WeightContribution", Damage.WeightContribution) : ini.GetDoubleValue("General Damage Settings", "Weight Contribution", Damage.WeightContribution));
-
-	Damage.GauntletWeightContribution = static_cast<float>(
-		ini.GetValue("Damage", "GauntletWeightContribution", nullptr) ? ini.GetDoubleValue("Damage", "GauntletWeightContribution", Damage.GauntletWeightContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Gauntlet Weight Contribution", Damage.GauntletWeightContribution));
-
-	Damage.UnarmedSkillContribution = static_cast<float>(
-		ini.GetValue("Damage", "UnarmedSkillContribution", nullptr) ? ini.GetDoubleValue("Damage", "UnarmedSkillContribution", Damage.UnarmedSkillContribution) : ini.GetDoubleValue("Unarmed Damage Settings", "Unarmed Skill Contribution", Damage.UnarmedSkillContribution));
-
-	Damage.AttackOfOpportunityMult = static_cast<float>(ini.GetDoubleValue("Damage", "AttackOfOpportunityMult", 1.5));
-
-	Damage.TrapMult = static_cast<float>(ini.GetDoubleValue("Damage", "TrapMult", 3.0));
-
+	// NPC / Player Multipliers
+	Global.ToPCMult = getFloatVal("Global", "ToPCMult", "General Damage Settings", "Player Multiplier", Global.ToPCMult);
+	Global.ToNPCMult = getFloatVal("Global", "ToNPCMult", "General Damage Settings", "NPC Multiplier", Global.ToNPCMult);
+	// Difficulty Scaling Influence
+	Global.DifficultyScaling = getFloatVal(
+		"Global",
+		"DifficultyScaling",
+		"General Damage Settings",
+		"Difficulty Scaling",
+		Global.DifficultyScaling);
 	// Impact Thresholds
-	Damage.NormalImpactThreshold = static_cast<float>(
-		ini.GetValue("Impact Thresholds", "Normal Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Normal Impact", Damage.NormalImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "NormalImpact", Damage.NormalImpactThreshold));
-
-	Damage.PowerfulImpactThreshold = static_cast<float>(
-		ini.GetValue("Impact Thresholds", "Powerful Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Powerful Impact", Damage.PowerfulImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "PowerfulImpact", Damage.PowerfulImpactThreshold));
-
-	Damage.SeismicImpactThreshold = static_cast<float>(
-		ini.GetValue("Impact Thresholds", "Seismic Impact", nullptr) ? ini.GetDoubleValue("Impact Thresholds", "Seismic Impact", Damage.SeismicImpactThreshold) : ini.GetDoubleValue("Impact Thresholds", "SeismicImpact", Damage.SeismicImpactThreshold));
+	Impact.Normal = getFloatVal("Impact Thresholds", "Normal", "Impact Thresholds", "Normal Impact", Impact.Normal);
+	Impact.Powerful = getFloatVal("Impact Thresholds", "Powerful", "Impact Thresholds", "Powerful Impact", Impact.Powerful);
+	Impact.Seismic = getFloatVal("Impact Thresholds", "Seismic", "Impact Thresholds", "Seismic Impact", Impact.Seismic);
 
 	// TrueHUD Integration
-	TrueHUD.SpecialBar = ini.GetValue("TrueHUD", "SpecialBar", nullptr) ? ini.GetBoolValue("TrueHUD", "SpecialBar", TrueHUD.SpecialBar) : ini.GetBoolValue("True HUD integration", "TrueHUD special bar usage", TrueHUD.SpecialBar);
-
-	bool ignoreValhalla = ini.GetValue("TrueHUD", "IgnoreValhallaCombat", nullptr) ? ini.GetBoolValue("TrueHUD", "IgnoreValhallaCombat", false) : ini.GetBoolValue("True HUD integration", "Ignore Valhalla Combat", false);
+	TrueHUD.SpecialBar = getBoolVal("TrueHUD", "SpecialBar", "True HUD integration", "TrueHUD special bar usage", TrueHUD.SpecialBar);
+	bool ignoreValhalla = getBoolVal("TrueHUD", "IgnoreValhallaCombat", "True HUD integration", "Ignore Valhalla Combat", false);
 
 	if (GetModuleHandleA("valhallaCombat.dll") && !ignoreValhalla) {
 		TrueHUD.SpecialBar = false;
 	}
 
-	auto normalColor = ini.GetValue("TrueHUD", "SpecialBarNormalColor", nullptr);
-	if (normalColor) {
+	if (auto normalColor = ini.GetValue("TrueHUD", "SpecialBarNormalColor", nullptr)) {
 		TrueHUD.SpecialBarNormalColor = std::stoul(normalColor, nullptr, 16);
 	}
-
-	auto depletedColor = ini.GetValue("TrueHUD", "SpecialBarDepletedColor", nullptr);
-	if (depletedColor) {
+	if (auto depletedColor = ini.GetValue("TrueHUD", "SpecialBarDepletedColor", nullptr)) {
 		TrueHUD.SpecialBarDepletedColor = std::stoul(depletedColor, nullptr, 16);
 	}
 
 	// Debug
-	Debug.LogWeaponCalcs = ini.GetBoolValue(
-		"Debug",
-		"LogWeaponCalcs",
-		Debug.LogWeaponCalcs);
+	Debug.LogWeaponCalcs = ini.GetBoolValue("Debug", "LogWeaponCalcs", Debug.LogWeaponCalcs);
+	Debug.LogUnarmedCalcs = ini.GetBoolValue("Debug", "LogUnarmedCalcs", Debug.LogUnarmedCalcs);
+	Debug.LogArmorCalcs = ini.GetBoolValue("Debug", "LogArmorCalcs", Debug.LogArmorCalcs);
+	Debug.LogMagicEffectCalcs = ini.GetBoolValue("Debug", "LogMagicEffectCalcs", Debug.LogMagicEffectCalcs);
+	Debug.LogStaggerCalcs = ini.GetBoolValue("Debug", "LogStaggerCalcs", Debug.LogStaggerCalcs);
+	Debug.LogActorCalcs = ini.GetBoolValue("Debug", "LogActorCalcs", Debug.LogActorCalcs);
 
-	Debug.LogArmorCalcs = ini.GetBoolValue(
-		"Debug",
-		"LogArmorCalcs",
-		Debug.LogArmorCalcs);
-
-	Debug.LogMagicEffectCalcs = ini.GetBoolValue(
-		"Debug",
-		"LogMagicEffectCalcs",
-		Debug.LogMagicEffectCalcs);
-
-	Debug.LogStaggerCalcs = ini.GetBoolValue(
-		"Debug",
-		"LogStaggerCalcs",
-		Debug.LogStaggerCalcs);
-
-	Debug.LogActorCalcs = ini.GetBoolValue(
-		"Debug",
-		"LogActorCalcs",
-		Debug.LogActorCalcs);
-
+	// Logging
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
-	logger::info(FMT_STRING("  [Health] BaseMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
-		Health.BaseMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
-	logger::info(FMT_STRING(
-					 "  [Damage] BashMult={} ArrowDamageMult={} BowDrawSpeedMult={} CrossbowMult={} "
-					 "CreatureMult={} TrapMult={} MeleeMult={} UnarmedMult={} "
-					 "NormalAttackMult={} PowerAttackMult={} BlockingMult={} MagicResistanceMult={}"),
-		Damage.BashMult,
-		Damage.ArrowDamageMult,
-		Damage.BowDrawSpeedMult,
-		Damage.CrossbowMult,
-		Damage.CreatureMult,
-		Damage.TrapMult,
-		Damage.MeleeMult,
-		Damage.UnarmedMult,
-		Damage.NormalAttackMult,
-		Damage.PowerAttackMult,
-		Damage.BlockingMult,
-		Damage.MagicResistanceMult);
-	logger::info(FMT_STRING("  [Impact Thresholds] Normal={} Powerful={} Seismic={}"),
-		Damage.NormalImpactThreshold, Damage.PowerfulImpactThreshold, Damage.SeismicImpactThreshold);
+	logger::info(FMT_STRING("  [Health] BaseMult={} MassMult={} ArmorMult={} ArmorMultMin={} RegenRate={}"),
+		Health.BaseMult, Health.MassMult, Health.ArmorMult, Health.ArmorMultMin, Health.RegenRate);
+	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
+		Weapon.MeleeMult, Weapon.WeightContribution, Weapon.BowDrawSpeedMult, Weapon.ArrowDamageMult, Weapon.CrossbowMult);
+	logger::info(FMT_STRING("  [Unarmed] Multiplier={} GauntletWeightContribution={} SkillContribution={} SkillType={}"),
+		Unarmed.Multiplier, Unarmed.GauntletWeightContribution, Unarmed.SkillContribution, Unarmed.SkillType);
+	logger::info(FMT_STRING("  [Creature] DamageMult={}"), Creature.DamageMultiplier);
+	logger::info(FMT_STRING("  [Blocking] BashMult={} BlockingMult={}"), Blocking.BashMult, Blocking.BlockingMult);
+	logger::info(FMT_STRING("  [Attack] NormalAttackMult={} PowerAttackMult={} AttackOfOpportunityMult={}"),
+		Attack.NormalAttackMult, Attack.PowerAttackMult, Attack.AttackOfOpportunityMult);
+	logger::info(FMT_STRING("  [Magic] ResistanceMult={}"), Magic.ResistanceMult);
+	logger::info(FMT_STRING("  [Environment] TrapMult={}"), Environment.TrapMult);
+	logger::info(FMT_STRING("  [Global] ToPCMult={} ToNPCMult={} DifficultyScaling={}"),
+		Global.ToPCMult,
+		Global.ToNPCMult,
+		Global.DifficultyScaling);
+	logger::info(FMT_STRING("  [Impact] Normal={} Powerful={} Seismic={}"),
+		Impact.Normal, Impact.Powerful, Impact.Seismic);
 	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),
 		TrueHUD.SpecialBar, ignoreValhalla);
-
-	logger::info(FMT_STRING(
-					 "  [TrueHUD Colors] Normal=0x{:X} Depleted=0x{:X}"),
-		TrueHUD.SpecialBarNormalColor,
-		TrueHUD.SpecialBarDepletedColor);
-
-	logger::info(FMT_STRING(
-					 "  [Debug] Weapon={} Armor={} MagicEffects={} Stagger={} Actors={}"),
-		Debug.LogWeaponCalcs,
-		Debug.LogArmorCalcs,
-		Debug.LogMagicEffectCalcs,
-		Debug.LogStaggerCalcs,
-		Debug.LogActorCalcs);
+	logger::info(FMT_STRING("  [TrueHUD Colors] Normal=0x{:X} Depleted=0x{:X}"),
+		TrueHUD.SpecialBarNormalColor, TrueHUD.SpecialBarDepletedColor);
+	logger::info(FMT_STRING("  [Debug] Weapon={} Unarmed={} Armor={} MagicEffects={} Stagger={} Actors={}"),
+		Debug.LogWeaponCalcs, Debug.LogUnarmedCalcs, Debug.LogArmorCalcs, Debug.LogMagicEffectCalcs, Debug.LogStaggerCalcs, Debug.LogActorCalcs);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)

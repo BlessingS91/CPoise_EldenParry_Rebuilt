@@ -25,9 +25,9 @@ float PoiseAV::ApplyDamageModifiers(RE::Actor* a_aggressor, RE::Actor* a_target,
 	a_damage *= baseMult;
 
 	if (a_target->IsPlayerRef()) {
-		a_damage *= settings->Damage.ToPCMult;
+		a_damage *= settings->Global.ToPCMult;
 	} else {
-		a_damage *= settings->Damage.ToNPCMult;
+		a_damage *= settings->Global.ToNPCMult;
 	}
 
 	return a_damage;
@@ -165,13 +165,13 @@ float PoiseAV::ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDa
 
 	float beforeDamage = a_poiseDamage;
 
-	a_poiseDamage *= settings->Damage.AttackOfOpportunityMult;
+	a_poiseDamage *= settings->Attack.AttackOfOpportunityMult;
 
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
 			FMT_STRING("[Attack of Oppourtunity Mult] Target={} Mult={} Before={} After={}"),
 			a_target->GetName(),
-			settings->Damage.AttackOfOpportunityMult,
+			settings->Attack.AttackOfOpportunityMult,
 			beforeDamage,
 			a_poiseDamage);
 	}
@@ -190,16 +190,16 @@ float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggresso
 	float rawDifficultyMult = settings->GetDamageMultiplier(a_aggressor, a_target);
 
 	float damageMultiplier =
-		1.0f + (rawDifficultyMult - 1.0f) * settings->Damage.PoiseScaling;
+		1.0f + (rawDifficultyMult - 1.0f) * settings->Global.DifficultyScaling;
 
 	float beforeDamage = a_poiseDamage;
 
 	a_poiseDamage *= damageMultiplier;
 
 	if (a_target->IsPlayerRef()) {
-		a_poiseDamage *= settings->Damage.ToPCMult;
+		a_poiseDamage *= settings->Global.ToPCMult;
 	} else {
-		a_poiseDamage *= settings->Damage.ToNPCMult;
+		a_poiseDamage *= settings->Global.ToNPCMult;
 	}
 
 	if (settings->Debug.LogStaggerCalcs) {
@@ -208,7 +208,7 @@ float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggresso
 			a_target->GetName(),
 			beforeDamage,
 			rawDifficultyMult,
-			settings->Damage.PoiseScaling,
+			settings->Global.DifficultyScaling,
 			damageMultiplier,
 			a_poiseDamage);
 	}
@@ -239,17 +239,17 @@ float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* 
 
 	std::string impactType = "None";
 
-	if (poiseDamagePercent >= settings->Damage.NormalImpactThreshold &&
-		poiseDamagePercent < settings->Damage.PowerfulImpactThreshold) {
+	if (poiseDamagePercent >= settings->Impact.Normal &&
+		poiseDamagePercent < settings->Impact.Powerful) {
 		impactType = "Normal";
 		Cast_Spell(a_target, "BHR_Normal_Impact", 0.0f);
 
-	} else if (poiseDamagePercent >= settings->Damage.PowerfulImpactThreshold &&
-			   poiseDamagePercent < settings->Damage.SeismicImpactThreshold) {
+	} else if (poiseDamagePercent >= settings->Impact.Powerful &&
+			   poiseDamagePercent < settings->Impact.Seismic) {
 		impactType = "Powerful";
 		Cast_Spell(a_target, "BHR_Powerful_Impact", 0.0f);
 
-	} else if (poiseDamagePercent >= settings->Damage.SeismicImpactThreshold) {
+	} else if (poiseDamagePercent >= settings->Impact.Seismic) {
 		impactType = "Seismic";
 		Cast_Spell(a_target, "BHR_Seismic_Impact", 0.0f);
 	}
@@ -262,9 +262,9 @@ float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* 
 			a_poiseDamage,
 			poiseDamagePercent,
 			impactType,
-			settings->Damage.NormalImpactThreshold,
-			settings->Damage.PowerfulImpactThreshold,
-			settings->Damage.SeismicImpactThreshold);
+			settings->Impact.Normal,
+			settings->Impact.Powerful,
+			settings->Impact.Seismic);
 	}
 	return poiseDamagePercent;
 }

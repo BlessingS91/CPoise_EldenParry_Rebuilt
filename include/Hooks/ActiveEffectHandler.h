@@ -1,5 +1,5 @@
 #pragma once
-
+#include <unordered_map>
 class ActiveEffectHandler
 {
 public:
@@ -23,6 +23,9 @@ public:
 	float CalculateEffectMultiplier(RE::ActorValue a_actorValue, bool a_detrimental);
 	void  ProcessValueModifier(RE::Actor* a_target, RE::ActorValue a_actorValue, float a_magnitudeDelta, RE::Actor* a_caster);
 	float ApplyMagicPoiseResistance(RE::Actor* a_target, float a_damage);
+	bool  IsTrapEffect(RE::EffectSetting* a_mgef);
+	bool  IsActorAffectedByTrap(RE::Actor* a_actor);
+	void  DumpTrapEffects();
 
 protected:
 	struct Hooks
@@ -69,8 +72,9 @@ private:
 	float GetResistanceMultiplier(
 		RE::Actor*     a_target,
 		RE::ActorValue a_actorValue);
+	std::unordered_map<RE::FormID, bool> _trapEffectCache;
 
-	constexpr ActiveEffectHandler() noexcept = default;
+	ActiveEffectHandler() noexcept = default;
 	ActiveEffectHandler(const ActiveEffectHandler&) = delete;
 	ActiveEffectHandler(ActiveEffectHandler&&) = delete;
 

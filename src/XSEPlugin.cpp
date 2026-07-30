@@ -3,6 +3,7 @@
 #include "EldenParry.h"
 #include "Events/Events.h"
 #include "Hooks.h"
+#include "Hooks/ActiveEffectHandler.h"
 #include "Hooks/Hooks.h"
 #include "Hooks/PoiseAV.h"
 #include "Storage/ActorCache.h"
@@ -25,6 +26,8 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 
 			auto settings = Settings::GetSingleton();
 			settings->LoadSettings();
+
+			ActiveEffectHandler::GetSingleton()->DumpTrapEffects();
 
 			EldenParry::GetSingleton()->init();
 			animEventHandler::Register(true, EldenSettings::bEnableNPCParry);

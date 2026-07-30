@@ -3,20 +3,35 @@
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
 
-float ActiveEffectHandler::CalculateEffectMultiplier(RE::ActorValue a_actorValue, bool a_detrimental)
-{
-	auto        settings = Settings::GetSingleton();
-	std::string sEffectType = a_detrimental ? "Damage" : "Recovery";
-	auto        baseAVString = std::string(magic_enum::enum_name(a_actorValue));
-	if (baseAVString.size() != 0) {
-		baseAVString = baseAVString.substr(1);
-		auto actorValue = settings->JSONSettings["Magic Effects"]["Actor Values"][sEffectType][baseAVString];
+#include "ClibUtil/editorID.hpp"
 
-		if (actorValue != nullptr)
-			return static_cast<float>(actorValue);
+float ActiveEffectHandler::CalculateEffectMultiplier(
+	RE::ActorValue a_actorValue,
+	bool           a_detrimental)
+{
+	auto settings = Settings::GetSingleton();
+
+	const std::string effectType =
+		a_detrimental ? "Damage" : "Recovery";
+
+	std::string avName{ magic_enum::enum_name(a_actorValue) };
+
+	if (avName.empty()) {
+		return 0.0f;
 	}
 
-	return 0;
+	// Remove k prefix (kHealth -> Health)
+	avName.erase(0, 1);
+
+	const auto jsonValue =
+		settings->JSONSettings["Magic Effects"]
+							  ["Actor Values"]
+							  [effectType]
+							  [avName];
+
+	return jsonValue != nullptr ?
+	           static_cast<float>(jsonValue) :
+	           0.0f;
 }
 
 void ActiveEffectHandler::ProcessValueModifier(
@@ -25,18 +40,28 @@ void ActiveEffectHandler::ProcessValueModifier(
 	float          a_magnitudeDelta,
 	RE::Actor*     a_aggressor)
 {
+	auto settings = Settings::GetSingleton();
+
 	if (!a_target ||
-		a_target == a_aggressor ||
-		(!a_aggressor && a_magnitudeDelta >= 0) ||
 		std::abs(a_magnitudeDelta) <= 0.001f) {
 		return;
 	}
 
-	auto settings = Settings::GetSingleton();
+	std::string avName(magic_enum::enum_name(a_actorValue));
 
-	float effectMultiplier = CalculateEffectMultiplier(a_actorValue, a_magnitudeDelta > 0);
+	if (avName.empty()) {
+		return;
+	}
 
-	if (effectMultiplier <= 0.0f) {
+	avName.erase(0, 1);
+
+	const bool detrimental = a_magnitudeDelta > 0.0f;
+
+	auto jsonAV =
+		settings->JSONSettings["Magic Effects"]["Actor Values"]
+							  [detrimental ? "Damage" : "Recovery"][avName];
+
+	if (jsonAV == nullptr) {
 		return;
 	}
 
@@ -46,16 +71,68 @@ void ActiveEffectHandler::ProcessValueModifier(
 		return;
 	}
 
+	const float effectMultiplier = static_cast<float>(jsonAV);
+
+	const bool logMagic =
+		settings->Debug.LogMagicEffectCalcs &&
+		std::abs(a_magnitudeDelta) >= 0.1f;
+
+	if (logMagic) {
+		logger::info(
+			"[Magic Entry] Target={} Aggressor={} SameActor={} AV={} Magnitude={}",
+			a_target->GetName(),
+			a_aggressor ? a_aggressor->GetName() : "NULL",
+			a_aggressor == a_target,
+			avName,
+			a_magnitudeDelta);
+	}
+
 	float poiseDamage = effectMultiplier * a_magnitudeDelta;
+
+	if (logMagic) {
+		logger::info(
+			"[Magic Base] Magnitude={} Mult={} Damage={}",
+			a_magnitudeDelta,
+			effectMultiplier,
+			poiseDamage);
+	}
 
 	if (poiseDamage <= 0.0f) {
 		return;
 	}
 
-	float baseMult = 1.0f;
+	//
+	// Trap modifier
+	//
 
-	// Apply perk modifiers
+	bool isTrap =
+		IsActorAffectedByTrap(a_target);
+
+	if (!isTrap && a_aggressor) {
+		isTrap = IsActorAffectedByTrap(a_aggressor);
+	}
+
+	if (isTrap) {
+		const float before = poiseDamage;
+
+		poiseDamage *= settings->Environment.TrapMult;
+
+		if (logMagic) {
+			logger::info(
+				"[Trap Applied] Mult={} Before={} After={}",
+				settings->Environment.TrapMult,
+				before,
+				poiseDamage);
+		}
+	}
+
+	//
+	// Perk modifiers
+	//
+
 	if (a_aggressor) {
+		float baseMult = 1.0f;
+
 		PoiseAV::ApplyPerkEntryPoint(
 			34,
 			a_aggressor->As<RE::Character>(),
@@ -68,116 +145,129 @@ void ActiveEffectHandler::ProcessValueModifier(
 			a_aggressor->As<RE::Character>(),
 			&baseMult);
 
+		const float before = poiseDamage;
+
 		poiseDamage *= baseMult;
+
+		if (logMagic) {
+			logger::info(
+				"[Perk Mult] Mult={} Before={} After={}",
+				baseMult,
+				before,
+				poiseDamage);
+		}
+
+		if (poiseDamage > 0.0f) {
+			const float damageMultiplier =
+				settings->GetDamageMultiplier(
+					a_aggressor,
+					a_target);
+
+			const float damageBefore = poiseDamage;
+
+			poiseDamage *= damageMultiplier;
+
+			if (logMagic) {
+				logger::info(
+					"[Damage Mult] Mult={} Before={} After={}",
+					damageMultiplier,
+					damageBefore,
+					poiseDamage);
+			}
+		}
 	}
 
-	// Soft cap extreme magic spikes
-	float preClampDamage = poiseDamage;
+	//
+	// Magic scaling
+	//
 
 	if (poiseDamage > 50.0f) {
-		float excessDamage = poiseDamage - 50.0f;
-		poiseDamage = 50.0f + (excessDamage * 0.5f);
+		const float before = poiseDamage;
+
+		poiseDamage =
+			50.0f + ((poiseDamage - 50.0f) * 0.5f);
+
+		if (logMagic) {
+			logger::info(
+				"[Magic Cap] Before={} After={}",
+				before,
+				poiseDamage);
+		}
 	}
 
-	float preResistDamage = poiseDamage;
+	const float beforeResist = poiseDamage;
 
-	// Apply magic resistance
-	poiseDamage = ApplyMagicPoiseResistance(a_target, poiseDamage);
-
-	float preLevelDamage = poiseDamage;
-
-	// Apply level scaling
-	if (a_aggressor) {
-		poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
-	}
-
-	float preDifficultyDamage = poiseDamage;
-
-	// Apply difficulty scaling
-	// poiseDamage *= settings->GetDifficultyMultiplier();
-
-	// Prevent meaningless zero damage ticks
-	poiseDamage = (std::max)(poiseDamage, 0.075f);
-
-	if (settings->Debug.LogMagicEffectCalcs && poiseDamage >= 1.0f) {
-		logger::info(
-			"[Magic Effect Poise] Target={}({:08X}) Aggressor={}({:08X}) AV={} "
-			"RawMagnitude={} EffectMultiplier={} BaseMult={} "
-			"PreClamp={} PreResist={} PreLevel={} PreDifficulty={} Final={}",
-			a_target->GetName(),
-			a_target->GetFormID(),
-			a_aggressor ? a_aggressor->GetName() : "NULL",
-			a_aggressor ? a_aggressor->GetFormID() : 0,
-			std::string(magic_enum::enum_name(a_actorValue)),
-			a_magnitudeDelta,
-			effectMultiplier,
-			baseMult,
-			preClampDamage,
-			preResistDamage,
-			preLevelDamage,
-			preDifficultyDamage,
+	poiseDamage =
+		ApplyMagicPoiseResistance(
+			a_target,
 			poiseDamage);
+
+	if (logMagic) {
+		logger::info(
+			"[Magic Final] Target={} AV={} Trap={} Final={} BeforeResist={}",
+			a_target->GetName(),
+			avName,
+			isTrap,
+			poiseDamage,
+			beforeResist);
 	}
 
-	poiseAV->DamageAndCheckPoise(a_target, a_aggressor, poiseDamage);
+	poiseAV->DamageAndCheckPoise(
+		a_target,
+		a_aggressor,
+		poiseDamage);
 }
 
-float ActiveEffectHandler::ApplyMagicPoiseResistance(RE::Actor* a_target, float a_damage)
+float ActiveEffectHandler::ApplyMagicPoiseResistance(
+	RE::Actor* a_target,
+	float      a_damage)
 {
 	if (!a_target) {
 		return a_damage;
 	}
 
 	auto settings = Settings::GetSingleton();
-
 	auto avOwner = a_target->AsActorValueOwner();
 
-	float magicResist =
+	const float magicResist =
 		avOwner->GetActorValue(RE::ActorValue::kResistMagic);
 
-	float fireResist =
+	const float fireResist =
 		avOwner->GetActorValue(RE::ActorValue::kResistFire);
 
-	float frostResist =
+	const float frostResist =
 		avOwner->GetActorValue(RE::ActorValue::kResistFrost);
 
-	float shockResist =
+	const float shockResist =
 		avOwner->GetActorValue(RE::ActorValue::kResistShock);
 
-	// Resist Magic = 65% of total resistance
-	// Elemental resistances combined = 35% of total resistance
-	float elementalAverage =
+	const float elementalAverage =
 		(fireResist + frostResist + shockResist) / 3.0f;
 
-	float effectiveResist =
+	const float effectiveResist = std::clamp(
 		(magicResist * 0.65f) +
-		(elementalAverage * 0.35f);
+			(elementalAverage * 0.35f),
+		-100.0f,
+		100.0f);
 
-	effectiveResist = std::clamp(effectiveResist, -100.0f, 100.0f);
-
-	float reduction = 0.0f;
 	float finalMult = 1.0f;
+	float reduction = 0.0f;
 
 	if (effectiveResist >= 0.0f) {
-		// Smooth diminishing returns curve
-		// Prevents low resistance values from becoming extreme reductions.
-		float normalizedResist =
+		const float normalized =
 			effectiveResist / 100.0f;
 
-		float curveStrength =
-			1.5f * settings->Magic.ResistanceMult;
-
-		float r1 =
-			normalizedResist * curveStrength;
+		const float scaled =
+			normalized *
+			(1.5f * settings->Magic.ResistanceMult);
 
 		reduction =
-			r1 / (1.0f + r1);
+			scaled / (1.0f + scaled);
 
 		finalMult =
 			1.0f - reduction;
 	} else {
-		// Negative resistance increases poise damage
-		float weakness =
+		const float weakness =
 			std::abs(effectiveResist) / 100.0f;
 
 		finalMult =
@@ -187,7 +277,11 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(RE::Actor* a_target, float 
 			-weakness;
 	}
 
-	if (settings->Debug.LogMagicEffectCalcs && a_damage >= 1.0f) {
+	const float finalDamage =
+		a_damage * finalMult;
+
+	if (settings->Debug.LogMagicEffectCalcs &&
+		a_damage >= 1.0f) {
 		logger::info(
 			"[Magic Poise Resist] Target={} Magic={} Fire={} Frost={} Shock={} Effective={} Reduction={} Mult={} Before={} After={}",
 			a_target->GetName(),
@@ -199,8 +293,286 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(RE::Actor* a_target, float 
 			reduction,
 			finalMult,
 			a_damage,
-			a_damage * finalMult);
+			finalDamage);
 	}
 
-	return a_damage * finalMult;
+	return finalDamage;
+}
+
+bool ActiveEffectHandler::IsTrapEffect(RE::EffectSetting* a_mgef)
+{
+	if (!a_mgef) {
+		return false;
+	}
+
+	const auto formID = a_mgef->GetFormID();
+
+	if (auto it = _trapEffectCache.find(formID);
+		it != _trapEffectCache.end()) {
+		return it->second;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	//
+	// JSON ActorValue filter FIRST
+	//
+
+	auto actorValue = a_mgef->data.primaryAV;
+
+	std::string avName(
+		magic_enum::enum_name(actorValue));
+
+	if (avName.empty()) {
+		_trapEffectCache.emplace(formID, false);
+		return false;
+	}
+
+	avName.erase(0, 1);
+
+	auto jsonAV =
+		settings->JSONSettings["Magic Effects"]
+							  ["Actor Values"]
+							  ["Damage"]
+							  [avName];
+
+	if (jsonAV == nullptr ||
+		static_cast<float>(jsonAV) <= 0.0f) {
+		_trapEffectCache.emplace(formID, false);
+		return false;
+	}
+
+	//
+	// ONLY NOW check Trap EditorID / Keywords
+	//
+
+	auto containsTrap = [](std::string a_string) {
+		std::ranges::transform(
+			a_string,
+			a_string.begin(),
+			[](unsigned char c) {
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return a_string.contains("trap") ||
+		       a_string.contains("magictrap");
+	};
+
+	bool isTrap = false;
+
+	auto editorID = clib_util::editorID::get_editorID(a_mgef);
+
+	if (!editorID.empty() && containsTrap(editorID)) {
+		isTrap = true;
+	}
+
+	if (!isTrap) {
+		for (std::uint32_t i = 0; i < a_mgef->numKeywords; ++i) {
+			auto* keyword = a_mgef->keywords[i];
+
+			if (!keyword) {
+				continue;
+			}
+
+			auto keywordID =
+				clib_util::editorID::get_editorID(keyword);
+
+			if (!keywordID.empty() && containsTrap(keywordID)) {
+				isTrap = true;
+				break;
+			}
+		}
+	}
+
+	_trapEffectCache.emplace(formID, isTrap);
+
+	return isTrap;
+}
+
+bool ActiveEffectHandler::IsActorAffectedByTrap(RE::Actor* a_actor)
+{
+	if (!a_actor) {
+		return false;
+	}
+
+	auto* magicTarget = a_actor->AsMagicTarget();
+	if (!magicTarget) {
+		return false;
+	}
+
+	auto* activeEffects = magicTarget->GetActiveEffectList();
+	if (!activeEffects) {
+		return false;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	for (auto* effect : *activeEffects) {
+		if (!effect ||
+			!effect->effect ||
+			!effect->effect->baseEffect) {
+			continue;
+		}
+
+		auto* mgef = effect->effect->baseEffect;
+
+		if (!IsTrapEffect(mgef)) {
+			continue;
+		}
+
+		if (settings->Debug.LogMagicEffectCalcs) {
+			auto editorID = clib_util::editorID::get_editorID(mgef);
+
+			logger::info(
+				"[Active TRAP MGEF] Actor={} Name={} EditorID={} FormID={:08X}",
+				a_actor->GetName(),
+				mgef->GetName(),
+				editorID.empty() ? "NULL" : editorID.c_str(),
+				mgef->GetFormID());
+
+			for (std::uint32_t i = 0; i < mgef->numKeywords; ++i) {
+				auto* keyword = mgef->keywords[i];
+				if (!keyword) {
+					continue;
+				}
+
+				auto keywordID = clib_util::editorID::get_editorID(keyword);
+
+				logger::info(
+					"    Keyword={} EditorID={} FormID={:08X}",
+					keyword->GetName(),
+					keywordID.empty() ? "NULL" : keywordID.c_str(),
+					keyword->GetFormID());
+			}
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+void ActiveEffectHandler::DumpTrapEffects()
+{
+	auto containsTrap = [](std::string a_string) {
+		std::ranges::transform(
+			a_string,
+			a_string.begin(),
+			[](unsigned char c) {
+				return static_cast<char>(std::tolower(c));
+			});
+
+		return a_string.contains("trap") ||
+		       a_string.contains("magictrap");
+	};
+
+	auto dataHandler = RE::TESDataHandler::GetSingleton();
+
+	if (!dataHandler) {
+		return;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	logger::info("========== FILTERED TRAP MGEF DUMP START ==========");
+
+	for (auto* mgef : dataHandler->GetFormArray<RE::EffectSetting>()) {
+		if (!mgef) {
+			continue;
+		}
+
+		//
+		// JSON ActorValue filter
+		//
+
+		auto actorValue = mgef->data.primaryAV;
+
+		std::string avName(
+			magic_enum::enum_name(actorValue));
+
+		if (avName.empty()) {
+			continue;
+		}
+
+		// kHealth -> Health
+		avName.erase(0, 1);
+
+		auto jsonValue =
+			settings->JSONSettings["Magic Effects"]
+								  ["Actor Values"]
+								  ["Damage"]
+								  [avName];
+
+		if (jsonValue == nullptr ||
+			static_cast<float>(jsonValue) <= 0.0f) {
+			continue;
+		}
+
+		const float jsonMultiplier =
+			static_cast<float>(jsonValue);
+
+		//
+		// Trap EditorID / Keyword lookup
+		//
+
+		bool isTrap = false;
+
+		auto editorID =
+			clib_util::editorID::get_editorID(mgef);
+
+		if (!editorID.empty() &&
+			containsTrap(editorID)) {
+			isTrap = true;
+		}
+
+		if (!isTrap) {
+			for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
+				auto* keyword = mgef->keywords[i];
+
+				if (!keyword) {
+					continue;
+				}
+
+				auto keywordID =
+					clib_util::editorID::get_editorID(keyword);
+
+				if (!keywordID.empty() &&
+					containsTrap(keywordID)) {
+					isTrap = true;
+					break;
+				}
+			}
+		}
+
+		if (!isTrap) {
+			continue;
+		}
+
+		logger::info(
+			"[TRAP MGEF] Name={} EditorID={} FormID={:08X} JSON_AV={} JSON_Mult={}",
+			mgef->GetName(),
+			editorID.empty() ? "NULL" : editorID.c_str(),
+			mgef->GetFormID(),
+			avName,
+			jsonMultiplier);
+
+		for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
+			auto* keyword = mgef->keywords[i];
+
+			if (!keyword) {
+				continue;
+			}
+
+			auto keywordID =
+				clib_util::editorID::get_editorID(keyword);
+
+			logger::info(
+				"    Keyword={} EditorID={} FormID={:08X}",
+				keyword->GetName(),
+				keywordID.empty() ? "NULL" : keywordID.c_str(),
+				keyword->GetFormID());
+		}
+	}
+
+	logger::info("========== FILTERED TRAP MGEF DUMP END ==========");
 }

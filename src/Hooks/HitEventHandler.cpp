@@ -3,6 +3,9 @@
 
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
+#undef min
+#undef max
+#include <limits>
 
 float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreWeight)
 {
@@ -72,7 +75,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 	basePoiseFactor = std::clamp(basePoiseFactor, 0.0f, 1.0f);
 
 	// 6. Map the final curve output to your target poise range (15.0f min to 70.0f max)
-	float minPoise = 25.0f;
+	float minPoise = 20.0f;
 	float maxPoise = 75.0f;
 
 	// Assuming r2 naturally spans from 0.0 to a theoretical ceiling,
@@ -326,9 +329,27 @@ float HitEventHandler::GetShieldDamage(RE::Actor* a_actor)
 
 	float poiseDamage =
 		std::lerp(
-			25.0f,
+			20.0f,
 			75.0f,
 			baseFactor);
+
+	// ==========================
+	// Block Skill Scaling
+	// ==========================
+
+	auto avOwner = a_actor->AsActorValueOwner();
+
+	float blockSkill = avOwner ?
+	                       avOwner->GetActorValue(RE::ActorValue::kBlock) :
+	                       0.0f;
+
+	float blockMultiplier =
+		std::clamp(
+			0.75f + (blockSkill / 100.0f) * 0.5f,
+			0.75f,
+			1.25f);
+
+	poiseDamage *= blockMultiplier;
 
 	if (settings->Debug.LogWeaponCalcs) {
 		logger::info(
@@ -337,6 +358,7 @@ float HitEventHandler::GetShieldDamage(RE::Actor* a_actor)
 				"Shield={} Armor={} Weight={} "
 				"ArmorNorm={} WeightNorm={} "
 				"ArmorCurve={} "
+				"BlockSkill={} BlockMult={} "
 				"BaseFactor={} Final={}"),
 			shield->GetName(),
 			shield->GetArmorRating(),
@@ -344,6 +366,8 @@ float HitEventHandler::GetShieldDamage(RE::Actor* a_actor)
 			normalizedArmor,
 			normalizedWeight,
 			armorR2,
+			blockSkill,
+			blockMultiplier,
 			baseFactor,
 			poiseDamage);
 	}
@@ -402,7 +426,7 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 
 	if (gauntlet && _minGauntlet && _maxGauntlet) {
 		float minArmor = _minGauntlet->GetArmorRating();
-		float maxArmor = _maxGauntlet->GetArmorRating() * settings->Global.ArmorScalingCurve;
+		float maxArmor = _maxGauntlet->GetArmorRating() * settings->Global.EquipmentReferenceMultiplier;
 
 		float minWeight = _minGauntlet->GetWeight();
 		float maxWeight = _maxGauntlet->GetWeight();
@@ -651,13 +675,50 @@ bool HitEventHandler::IsCreature(RE::Actor* actor)
 		return false;
 	}
 
-	auto npcKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0x00013794);
+	// Static Lookups (initialized once)
+	static auto creatureKeyword =
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13795);
 
-	if (!npcKeyword) {
-		return false;
+	static auto animalKeyword =
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13798);
+
+	static auto dwarvenKeyword =
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x1397A);
+
+	static auto humanoidKeyword =
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13794);
+
+	bool hasCreature =
+		creatureKeyword && race->HasKeyword(creatureKeyword);
+
+	bool hasAnimal =
+		animalKeyword && race->HasKeyword(animalKeyword);
+
+	bool hasDwarven =
+		dwarvenKeyword && race->HasKeyword(dwarvenKeyword);
+
+	bool hasHumanoid =
+		humanoidKeyword && race->HasKeyword(humanoidKeyword);
+
+	bool result =
+		(hasCreature || hasAnimal || hasDwarven) && !hasHumanoid;
+
+	auto settings = Settings::GetSingleton();
+
+	if (settings->Debug.LogWeaponCalcs && result) {
+		logger::info(
+			FMT_STRING(
+				"[IsCreature] Actor={} Race={} Creature={} Animal={} Dwarven={} Humanoid={} Result={}"),
+			actor->GetName(),
+			race->GetFormEditorID(),
+			hasCreature,
+			hasAnimal,
+			hasDwarven,
+			hasHumanoid,
+			result);
 	}
 
-	return !race->HasKeyword(npcKeyword);
+	return result;
 }
 
 float HitEventHandler::ApplyAttackMultiplier(RE::HitData* hitData, float stagger)
@@ -800,12 +861,15 @@ float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* 
 	if (!hitData || !target || hitData->percentBlocked <= 0.0f) {
 		return stagger;
 	}
+
 	auto  settings = Settings::GetSingleton();
 	float blockMult = 1.0f;
 
-	// Power attacks always deal full poise damage
-	if (!hitData->flags.any(RE::HitData::Flag::kPowerAttack)) {
-		// Normal blocking scales with vanilla block percentage
+	if (hitData->flags.any(RE::HitData::Flag::kPowerAttack)) {
+		// Power attacks partially ignore blocks, but still receive 25% reduction
+		blockMult = 0.75f;
+	} else {
+		// Normal attacks scale with block percentage
 		blockMult = 1.0f - hitData->percentBlocked;
 	}
 
@@ -831,6 +895,8 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	float stagger = 0.0f;
 
 	auto sourceRef = hitData->sourceRef.get().get();
+
+	bool isCreature = aggressor && IsCreature(aggressor);
 
 	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
@@ -860,7 +926,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 	// ==========================
 	// Weapon / Unarmed Attacks
 	// ==========================
-	else if (hitData->weapon) {
+	else if (hitData->weapon && (!aggressor || !isCreature)) {
 		// Shield strikes can carry a weapon pointer.
 		if (hitData->skill == RE::ActorValue::kNone &&
 			IsShieldStrike(aggressor, hitData)) {
@@ -904,7 +970,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 		// ==========================
 		// Environment / Traps
 		// ==========================
-		else if (!aggressor) {
+		if (!aggressor) {
 			if (settings->Debug.LogWeaponCalcs) {
 				logger::info("[kNone BRANCH] ENVIRONMENT");
 			}
@@ -923,46 +989,81 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 					stagger);
 			}
 		}
-
 		// ==========================
 		// Creature
 		// ==========================
-		else if (IsCreature(aggressor)) {
-			RE::TESRace* race = nullptr;
-			float        unarmedDamage = 0.0f;
+		else if (isCreature) {
+			RE::TESRace* race = aggressor->GetRace();
 
-			if (settings->Debug.LogWeaponCalcs) {
-				race = aggressor->GetRace();
-				unarmedDamage = aggressor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kUnarmedDamage);
+			float creatureWeight = 1.0f;
+
+			if (race) {
+				auto it = settings->RaceWeightCache.find(
+					race->GetFormEditorID());
+
+				if (it != settings->RaceWeightCache.end()) {
+					creatureWeight = it->second;
+				}
 			}
 
-			if (settings->Debug.LogWeaponCalcs) {
-				logger::info(
-					FMT_STRING(
-						"[Unarmed Data] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={}"),
-					aggressor->GetName(),
-					race ? race->GetName() : "NULL",
-					hitData->weapon ? hitData->weapon->GetName() : "NONE",
-					unarmedDamage,
-					hitData->physicalDamage);
-			}
-			stagger = hitData->physicalDamage *
-			          settings->Creature.DamageMultiplier;
+			float weightRange =
+				settings->MaxRaceWeight - settings->MinRaceWeight;
 
-			if (settings->Debug.LogWeaponCalcs) {
-				logger::info(
-					FMT_STRING(
-						"[Creature Result] Aggressor={} Race={} Weapon={} UnarmedAV={} PhysicalDamage={} Mult={} Final={}"),
-					aggressor->GetName(),
-					race ? race->GetName() : "NULL",
-					hitData->weapon ? hitData->weapon->GetName() : "NONE",
-					unarmedDamage,
+			float normalizedWeight = 0.0f;
+
+			if (weightRange > 0.0f) {
+				normalizedWeight = std::clamp(
+					(creatureWeight - settings->MinRaceWeight) / weightRange,
+					0.0f,
+					1.0f);
+			}
+
+			// Weight curve
+			float r1 =
+				normalizedWeight *
+				settings->Creature.ScalingCurve;
+
+			float r2 =
+				r1 /
+				(1.0f + r1);
+
+			float creatureMultiplier =
+				std::lerp(
+					0.25f,
+					3.0f,
+					r2);
+
+			// Minimum creature attack damage before creature scaling
+			float baseDamage =
+				std::max(
 					hitData->physicalDamage,
-					settings->Creature.DamageMultiplier,
-					stagger);
-			}
-		}
+					25.0f);
 
+			stagger =
+				baseDamage *
+				creatureMultiplier *
+				settings->Creature.DamageMultiplier;
+
+			logger::info(
+				FMT_STRING(
+					"[Creature Calc] "
+					"Aggressor={} Race={} "
+					"RawDamage={} BaseDamage={} "
+					"Weight={} Normalized={} "
+					"Curve={} R2={} "
+					"CreatureMult={} DamageMult={} Final={}"),
+				aggressor->GetName(),
+				race ? race->GetName() : "NULL",
+				hitData->physicalDamage,
+				baseDamage,
+				creatureWeight,
+				normalizedWeight,
+				settings->Creature.ScalingCurve,
+				r2,
+				creatureMultiplier,
+				settings->Creature.DamageMultiplier,
+				stagger);
+		}
 		// ==========================
 		// Humanoid Unarmed
 		// ==========================

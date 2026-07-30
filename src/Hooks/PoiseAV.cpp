@@ -129,23 +129,54 @@ bool PoiseAV::IsActorPerformingAction(RE::Actor* a_actor)
 		return false;
 	}
 
-	bool isCasting = false;
+	bool castLeft = false;
+	bool castRight = false;
+	bool castDual = false;
 
-	a_actor->GetGraphVariableBool("IsInCastState", isCasting);
+	a_actor->GetGraphVariableBool("IsCastingLeft", castLeft);
+	a_actor->GetGraphVariableBool("IsCastingRight", castRight);
+	a_actor->GetGraphVariableBool("IsCastingDual", castDual);
 
-	if (isCasting) {
+	auto hasWardKeyword = [](RE::SpellItem* spell) {
+		if (!spell) {
+			return false;
+		}
+
+		auto keyword = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("MagicWard");
+		return keyword && spell->HasKeyword(keyword);
+	};
+
+	auto leftSpell = a_actor->GetEquippedObject(true);
+	auto rightSpell = a_actor->GetEquippedObject(false);
+
+	bool leftWard =
+		hasWardKeyword(leftSpell ? leftSpell->As<RE::SpellItem>() : nullptr);
+
+	bool rightWard =
+		hasWardKeyword(rightSpell ? rightSpell->As<RE::SpellItem>() : nullptr);
+
+	// True dual cast
+	if (castDual) {
+		if (leftWard || rightWard) {
+			logger::info("[AoO Check] {} dual casting ward, ignoring action", a_actor->GetName());
+			return false;
+		}
+
 		return true;
 	}
 
-	bool castRight = false;
-	bool castLeft = false;
-	bool castDual = false;
+	// Independent left/right casting
+	if (castLeft && leftWard) {
+		logger::info("[AoO Check] {} left ward casting, ignoring action", a_actor->GetName());
+		return false;
+	}
 
-	a_actor->GetGraphVariableBool("IsCastingRight", castRight);
-	a_actor->GetGraphVariableBool("IsCastingLeft", castLeft);
-	a_actor->GetGraphVariableBool("IsCastingDual", castDual);
+	if (castRight && rightWard) {
+		logger::info("[AoO Check] {} right ward casting, ignoring action", a_actor->GetName());
+		return false;
+	}
 
-	return castRight || castLeft || castDual;
+	return castLeft || castRight;
 }
 
 float PoiseAV::ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDamage)
@@ -164,15 +195,105 @@ float PoiseAV::ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDa
 		settings->Debug.LogActorCalcs &&
 		beforeDamage != a_poiseDamage) {
 		logger::info(
-			FMT_STRING("[AoO Check] Target={} AttackState={} Casting={}"),
+			FMT_STRING(
+				"[Attack of Opportunity] "
+				"Target={} "
+				"Triggered={} "
+				"AttackState={} "
+				"Casting={} "
+				"DamageBefore={} "
+				"DamageAfter={}"),
 			a_target->GetName(),
+			IsActorPerformingAction(a_target),
 			a_target->AsActorState() ?
 				static_cast<int>(a_target->AsActorState()->GetAttackState()) :
 				-1,
-			IsActorPerformingAction(a_target));
+			GetBoolVariable(a_target, "IsInCastState"),
+			beforeDamage,
+			a_poiseDamage);
 	}
 
 	return a_poiseDamage;
+}
+
+float PoiseAV::GetWardPoiseReduction(RE::Actor* a_actor)
+{
+	if (!a_actor) {
+		return 0.0f;
+	}
+
+	auto keyword = RE::TESForm::LookupByEditorID<RE::BGSKeyword>("MagicWard");
+
+	if (!keyword) {
+		return 0.0f;
+	}
+
+	bool castLeft = false;
+	bool castRight = false;
+	bool castDual = false;
+
+	a_actor->GetGraphVariableBool("IsCastingLeft", castLeft);
+	a_actor->GetGraphVariableBool("IsCastingRight", castRight);
+	a_actor->GetGraphVariableBool("IsCastingDual", castDual);
+
+	auto settings = Settings::GetSingleton();
+
+	float restoration = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kRestoration);
+
+	auto checkWard = [&](RE::SpellItem* spell, const char* hand) {
+		if (!spell || !spell->HasKeyword(keyword)) {
+			return 0.0f;
+		}
+
+		if (spell->effects.empty() || !spell->effects[0]) {
+			return 0.0f;
+		}
+
+		float magnitude = spell->effects[0]->effectItem.magnitude;
+
+		float spellPart = magnitude * 0.005f;
+		float restorationPart = restoration * 0.004f;
+
+		float reduction = std::clamp(spellPart + restorationPart, 0.2f, 0.8f);
+
+		if (settings->Debug.LogMagicEffectCalcs) {
+			logger::info(
+				"[Ward Poise Reduction] Actor={} Hand={} Spell={} Reduction={}%%",
+				a_actor->GetName(),
+				hand,
+				spell->GetName(),
+				reduction * 100.0f);
+		}
+
+		return reduction;
+	};
+
+	float reduction = 0.0f;
+
+	auto leftSpell = a_actor->GetEquippedObject(true);
+	auto rightSpell = a_actor->GetEquippedObject(false);
+
+	if (castDual) {
+		// True dual cast: either hand contributes
+		reduction = std::max(
+			checkWard(leftSpell ? leftSpell->As<RE::SpellItem>() : nullptr, "Dual Left"),
+			checkWard(rightSpell ? rightSpell->As<RE::SpellItem>() : nullptr, "Dual Right"));
+	} else {
+		// Independent hand casts
+		if (castLeft) {
+			reduction = std::max(
+				reduction,
+				checkWard(leftSpell ? leftSpell->As<RE::SpellItem>() : nullptr, "Left"));
+		}
+
+		if (castRight) {
+			reduction = std::max(
+				reduction,
+				checkWard(rightSpell ? rightSpell->As<RE::SpellItem>() : nullptr, "Right"));
+		}
+	}
+
+	return reduction;
 }
 
 float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage)
@@ -200,6 +321,46 @@ float PoiseAV::ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggresso
 			rawDifficultyMult,
 			settings->Global.DifficultyScaling,
 			damageMultiplier,
+			a_poiseDamage);
+	}
+
+	return a_poiseDamage;
+}
+
+float PoiseAV::ApplyLevelDifferenceScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage)
+{
+	if (!a_target || !a_aggressor || a_poiseDamage <= 0.0f) {
+		return a_poiseDamage;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	int attackerLevel = a_aggressor->GetLevel();
+	int targetLevel = a_target->GetLevel();
+
+	int levelDifference = attackerLevel - targetLevel;
+
+	// Attacker higher level = deal more poise damage
+	// Attacker lower level = deal less poise damage
+	float levelMult = 1.0f + (levelDifference * settings->Global.LevelDifferenceMult);
+
+	// Prevent extreme scaling
+	levelMult = std::clamp(levelMult, 0.7f, 1.3f);
+
+	float beforeDamage = a_poiseDamage;
+
+	a_poiseDamage *= levelMult;
+
+	if (settings->Debug.LogStaggerCalcs) {
+		logger::info(
+			FMT_STRING("[Level Scaling] Attacker={} Level={} Target={} Level={} Difference={} Mult={} Before={} After={}"),
+			a_aggressor->GetName(),
+			attackerLevel,
+			a_target->GetName(),
+			targetLevel,
+			levelDifference,
+			levelMult,
+			beforeDamage,
 			a_poiseDamage);
 	}
 
@@ -261,9 +422,16 @@ float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* 
 	return poiseDamagePercent;
 }
 
-void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, float a_poiseDamagePercent, float a_currentPoise, AVManager* avManager)
+void PoiseAV::HandlePoiseBreak(
+	RE::Actor* a_target,
+	RE::Actor* a_aggressor,
+	float      a_impactPercent)
 {
-	if (!a_target || !avManager) {
+	if (!a_target) {
+		return;
+	}
+
+	if (GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
 		return;
 	}
 
@@ -271,40 +439,24 @@ void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, floa
 
 	a_target->AddToFaction(ForceFullBodyStagger, 0);
 
-	if (GetBoolVariable(a_target, "bKaputt_IsInKillMove")) {
-		return;
-	}
+	float staggerMagnitude = std::clamp(
+		0.5f + a_impactPercent,
+		0.5f,
+		2.0f);
 
-	float safeStaggerMag = std::clamp(a_poiseDamagePercent, 0.0f, 2.0f);
-
-	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
-		float maxPoise;
-
-		{
-			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-			maxPoise = avManager->GetActorValueMax(g_avName, a_target);
-		}
-
+	if (settings->Debug.LogStaggerCalcs) {
 		logger::info(
 			FMT_STRING(
-				"[Poise Break] Target={} "
-				"PoiseDamage={} "
-				"PoiseRemaining={} "
-				"MaxPoise={} "
-				"DamagePercent={} "
-				"StaggerMagnitude={}"),
+				"[Poise Break] Target={} ImpactPercent={} Magnitude={}"),
 			a_target->GetName(),
-			a_poiseDamage,
-			a_currentPoise,
-			maxPoise,
-			a_poiseDamagePercent,
-			safeStaggerMag);
+			a_impactPercent,
+			staggerMagnitude);
 	}
 
-	TryStagger(a_target, safeStaggerMag, a_aggressor);
-
-	// REMOVE THIS
-	// a_target->SetGraphVariableBool("bPoise_IsStaggered", false);
+	TryStagger(
+		a_target,
+		staggerMagnitude,
+		a_aggressor);
 }
 
 void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, [[maybe_unused]] RE::HitData* a_hitData)
@@ -333,6 +485,31 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	a_poiseDamage = ApplyAttackOfOpportunityMult(a_target, a_poiseDamage);
 	float afterAoO = a_poiseDamage;
 
+	float wardReduction = GetWardPoiseReduction(a_target);
+
+	float afterWard = a_poiseDamage;
+
+	if (wardReduction > 0.0f) {
+		float beforeWard = a_poiseDamage;
+
+		a_poiseDamage *= (1.0f - wardReduction);
+
+		if (settings->Debug.LogMagicEffectCalcs) {
+			logger::info(
+				"[Ward Poise Reduction] Target={} Reduction={}%% Before={} After={}",
+				a_target->GetName(),
+				wardReduction * 100.0f,
+				beforeWard,
+				a_poiseDamage);
+		}
+	}
+
+	// Level difference scaling
+	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
+		a_poiseDamage = ApplyLevelDifferenceScaling(a_target, a_aggressor, a_poiseDamage);
+	}
+	float afterLevelScaling = a_poiseDamage;
+
 	// Your custom difficulty scaling
 	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
 		a_poiseDamage = ApplyDifficultyScaling(a_target, a_aggressor, a_poiseDamage);
@@ -341,25 +518,115 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 	// Vanilla stagger perks should be LAST
 	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
+		auto logStaggerPerks = [](RE::Actor* actor, RE::BGSEntryPointPerkEntry::EntryPoint entryPoint, const char* label) {
+			if (!actor) {
+				return;
+			}
+
+			class StaggerPerkVisitor : public RE::PerkEntryVisitor
+			{
+			public:
+				StaggerPerkVisitor(RE::Actor* a_actor, const char* a_label) :
+					actor(a_actor),
+					label(a_label)
+				{}
+
+				RE::PerkEntryVisitor::ReturnType Visit(RE::BGSPerkEntry* a_entry) override
+				{
+					auto perkEntry = skyrim_cast<RE::BGSEntryPointPerkEntry*>(a_entry);
+
+					if (!perkEntry) {
+						return RE::PerkEntryVisitor::ReturnType::kContinue;
+					}
+
+					auto perk = perkEntry->perk;
+
+					logger::info(
+						FMT_STRING("[{}] Actor={} Perk={} EntryPoint={}"),
+						label,
+						actor->GetName(),
+						perk ? perk->GetName() : "NULL",
+						static_cast<int>(perkEntry->entryData.entryPoint.underlying()));
+
+					return RE::PerkEntryVisitor::ReturnType::kContinue;
+				}
+
+				RE::Actor*  actor;
+				const char* label;
+			};
+
+			StaggerPerkVisitor visitor(actor, label);
+			actor->ForEachPerkEntry(entryPoint, visitor);
+		};
+
 		float incomingMult = 1.0f;
 		float targetMult = 1.0f;
 
-		// Mod Incoming Stagger (attacker perk)
+		// Detailed perk enumeration only
+		if (settings->Debug.LogPerkCalcs) {
+			logStaggerPerks(
+				a_aggressor,
+				static_cast<RE::BGSEntryPointPerkEntry::EntryPoint>(34),
+				"Incoming");
+		}
+
+		// Always apply vanilla incoming stagger perks
 		ApplyPerkEntryPoint(
 			34,
 			a_aggressor->As<RE::Character>(),
 			a_target->As<RE::Character>(),
 			&incomingMult);
 
-		// Mod Target Stagger (target perk)
+		if (settings->Debug.LogStaggerCalcs) {
+			logger::info(
+				FMT_STRING(
+					"[Vanilla Perk Incoming] "
+					"Aggressor={} Target={} Mult={}"),
+				a_aggressor->GetName(),
+				a_target->GetName(),
+				incomingMult);
+		}
+
+		// Detailed perk enumeration only
+		if (settings->Debug.LogPerkCalcs) {
+			logStaggerPerks(
+				a_target,
+				static_cast<RE::BGSEntryPointPerkEntry::EntryPoint>(33),
+				"Target");
+		}
+
+		// Always apply vanilla target stagger perks
 		ApplyPerkEntryPoint(
 			33,
 			a_target->As<RE::Character>(),
 			a_aggressor->As<RE::Character>(),
 			&targetMult);
 
+		if (settings->Debug.LogStaggerCalcs) {
+			logger::info(
+				FMT_STRING(
+					"[Vanilla Perk Target] "
+					"Target={} Aggressor={} Mult={}"),
+				a_target->GetName(),
+				a_aggressor->GetName(),
+				targetMult);
+		}
+
 		float vanillaStaggerMult = incomingMult * targetMult;
 
+		if (settings->Debug.LogStaggerCalcs) {
+			logger::info(
+				FMT_STRING(
+					"[Vanilla Perk Final] "
+					"IncomingMult={} TargetMult={} Combined={} Before={} After={}"),
+				incomingMult,
+				targetMult,
+				vanillaStaggerMult,
+				a_poiseDamage,
+				a_poiseDamage * vanillaStaggerMult);
+		}
+
+		// Always apply final vanilla multiplier
 		a_poiseDamage *= vanillaStaggerMult;
 	}
 
@@ -368,14 +635,15 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	poiseDamagePercent = CheckImpact(a_target, a_poiseDamage, avManager);
 
 	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
-		float afterVanillaPerks = a_poiseDamage;
 		logger::info(
-			FMT_STRING("[Poise Stages] Target={} Initial={} AoO={} Difficulty={} VanillaPerks={}"),
+			FMT_STRING("[Poise Stages] Target={} Initial={} AoO={} Ward={} Level={} Difficulty={} VanillaPerks={}"),
 			a_target->GetName(),
 			initialPoiseDamage,
 			afterAoO,
+			afterWard,
+			afterLevelScaling,
 			afterDifficulty,
-			afterVanillaPerks);
+			a_poiseDamage);
 	}
 
 	{
@@ -392,7 +660,10 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 
 	// Check if the hit depleted the target's remaining poise.
 	if (poise <= 0.0f) {
-		HandlePoiseBreak(a_target, a_aggressor, a_poiseDamage, poiseDamagePercent, poise, avManager);
+		HandlePoiseBreak(
+			a_target,
+			a_aggressor,
+			poiseDamagePercent);
 	}
 
 	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {

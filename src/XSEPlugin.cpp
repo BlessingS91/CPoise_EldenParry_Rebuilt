@@ -22,16 +22,22 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 		{
 			auto poiseAV = PoiseAV::GetSingleton();
 			poiseAV->RetrieveFullBodyStaggerFaction();
+
 			auto settings = Settings::GetSingleton();
 			settings->LoadSettings();
+
 			EldenParry::GetSingleton()->init();
 			animEventHandler::Register(true, EldenSettings::bEnableNPCParry);
 			break;
 		}
+
 	case SKSE::MessagingInterface::kPostLoad:
 		{
 			auto poiseAVHUD = PoiseAVHUD::GetSingleton();
-			poiseAVHUD->trueHUDInterface = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>(TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3));
+			poiseAVHUD->trueHUDInterface =
+				reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>(
+					TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3));
+
 			if (poiseAVHUD->trueHUDInterface) {
 				logger::info("Obtained TrueHUD API");
 			} else {
@@ -39,29 +45,22 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 			}
 			break;
 		}
+
 	case SKSE::MessagingInterface::kPreLoadGame:
 		{
-			auto settings = Settings::GetSingleton();
-			settings->LoadSettings();
 			ActorCache::GetSingleton()->Revert();
 			break;
 		}
+
 	case SKSE::MessagingInterface::kNewGame:
 		{
-			auto settings = Settings::GetSingleton();
-			settings->LoadSettings();
 			ActorCache::GetSingleton()->Revert();
 			break;
 		}
+
 	default:
 		break;
 	}
-}
-
-void Init()
-{
-	auto messaging = SKSE::GetMessagingInterface();
-	messaging->RegisterListener("SKSE", MessageHandler);
 }
 
 void onSKSEInit()
@@ -132,8 +131,6 @@ EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(con
 	logger::info("Loaded plugin");
 
 	SKSE::Init(a_skse);
-
-	Init();
 
 	onSKSEInit();
 

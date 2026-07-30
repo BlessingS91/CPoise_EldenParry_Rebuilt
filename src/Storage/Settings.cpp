@@ -1,6 +1,9 @@
 #include "Storage/Settings.h"
 #include "UI/PoiseAVHUD.h"
 #include <fstream>
+#undef min
+#undef max
+#include <limits>
 
 float Settings::GetDamageMultiplier(RE::Actor* a_aggressor, RE::Actor* a_target)
 {
@@ -161,7 +164,21 @@ void Settings::LoadINI(const wchar_t* a_path)
 				Unarmed.SkillType));
 
 	// Creature Damage
-	Creature.DamageMultiplier = getFloatVal("Creature", "DamageMultiplier", "Damage Settings", "Creature Damage Multiplier", Creature.DamageMultiplier);
+	Creature.DamageMultiplier =
+		getFloatVal(
+			"Creature",
+			"DamageMultiplier",
+			"Damage Settings",
+			"Creature Damage Multiplier",
+			Creature.DamageMultiplier);
+
+	Creature.ScalingCurve =
+		getFloatVal(
+			"Creature",
+			"ScalingCurve",
+			"Damage Settings",
+			"Creature Scaling Curve",
+			Creature.ScalingCurve);
 
 	// Bash / Blocking
 	Blocking.BashMult = getFloatVal("Blocking", "BashMult", "Damage Settings", "Bash Mult", Blocking.BashMult);
@@ -190,7 +207,13 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Attack.AttackOfOpportunityMult = getFloatVal("Attack", "AttackOfOpportunityMult", "Damage", "AttackOfOpportunityMult", Attack.AttackOfOpportunityMult);
 
 	// Magic Damage
-	Magic.ResistanceMult = getFloatVal("Magic", "ResistanceMult", "General Damage Settings", "Magic Resistance Multiplier", Magic.ResistanceMult);
+	Magic.ResistanceMult =
+		getFloatVal(
+			"Magic",
+			"ResistanceMult",
+			"General Damage Settings",
+			"Magic Resistance Multiplier",
+			Magic.ResistanceMult);
 
 	// Environment / Traps
 	Environment.TrapMult = getFloatVal("Environment", "TrapMult", "Damage", "TrapMult", Environment.TrapMult);
@@ -222,6 +245,12 @@ void Settings::LoadINI(const wchar_t* a_path)
 		"General Damage Settings",
 		"Equipment Reference Multiplier",
 		Global.EquipmentReferenceMultiplier);
+	Global.LevelDifferenceMult = getFloatVal(
+		"Global",
+		"LevelDifferenceMult",
+		"General Damage Settings",
+		"Level Difference Mult",
+		Global.LevelDifferenceMult);
 
 	// Impact Thresholds
 	Impact.Normal = getFloatVal("Impact Thresholds", "Normal", "Impact Thresholds", "Normal Impact", Impact.Normal);
@@ -250,6 +279,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Debug.LogMagicEffectCalcs = ini.GetBoolValue("Debug", "LogMagicEffectCalcs", Debug.LogMagicEffectCalcs);
 	Debug.LogStaggerCalcs = ini.GetBoolValue("Debug", "LogStaggerCalcs", Debug.LogStaggerCalcs);
 	Debug.LogActorCalcs = ini.GetBoolValue("Debug", "LogActorCalcs", Debug.LogActorCalcs);
+	Debug.LogPerkCalcs = ini.GetBoolValue("Debug", "LogPerkCalcs", Debug.LogPerkCalcs);
 
 	// Logging
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
@@ -274,47 +304,100 @@ void Settings::LoadINI(const wchar_t* a_path)
 		Unarmed.HeavyGauntletContribution,
 		Unarmed.LightGauntletContribution,
 		Unarmed.SkillType);
-	logger::info(FMT_STRING("  [Creature] DamageMult={}"), Creature.DamageMultiplier);
+
+	logger::info(
+		FMT_STRING(
+			"  [Creature] DamageMultiplier={} ScalingCurve={}"),
+		Creature.DamageMultiplier,
+		Creature.ScalingCurve);
+
 	logger::info(
 		FMT_STRING(
 			"  [Blocking] BashMult={} BlockingMult={}"),
 		Blocking.BashMult,
 		Blocking.BlockingMult);
+
 	logger::info(
 		FMT_STRING(
 			"  [Shield] ArmorContribution={} WeightContribution={}"),
 		Shield.ArmorContribution,
 		Shield.WeightContribution);
+
 	logger::info(FMT_STRING("  [Attack] NormalAttackMult={} PowerAttackMult={} AttackOfOpportunityMult={}"),
 		Attack.NormalAttackMult, Attack.PowerAttackMult, Attack.AttackOfOpportunityMult);
-	logger::info(FMT_STRING("  [Magic] ResistanceMult={}"), Magic.ResistanceMult);
+
+	logger::info(
+		FMT_STRING(
+			"  [Magic] ResistanceMult={}"),
+		Magic.ResistanceMult);
+
 	logger::info(FMT_STRING("  [Environment] TrapMult={}"), Environment.TrapMult);
-	logger::info(FMT_STRING("  [Global] ToPCMult={} ToNPCMult={} DifficultyScaling={} WeaponScalingCurve={} ArmorScalingCurve={} EquipmentReferenceMultiplier={}"),
+
+	logger::info(FMT_STRING("  [Global] ToPCMult={} ToNPCMult={} DifficultyScaling={} WeaponScalingCurve={} ArmorScalingCurve={} EquipmentReferenceMultiplier={} LevelDifferenceMult={}"),
 		Global.ToPCMult,
 		Global.ToNPCMult,
 		Global.DifficultyScaling,
 		Global.WeaponScalingCurve,
 		Global.ArmorScalingCurve,
-		Global.EquipmentReferenceMultiplier);
+		Global.EquipmentReferenceMultiplier,
+		Global.LevelDifferenceMult);
 	logger::info(FMT_STRING("  [Impact] Normal={} Large={} Massive={}"),
 		Impact.Normal, Impact.Large, Impact.Massive);
 	logger::info(FMT_STRING("  [TrueHUD] SpecialBar={} (IgnoreValhalla={})"),
 		TrueHUD.SpecialBar, ignoreValhalla);
 	logger::info(FMT_STRING("  [TrueHUD Colors] Normal=0x{:X} Depleted=0x{:X}"),
 		TrueHUD.SpecialBarNormalColor, TrueHUD.SpecialBarDepletedColor);
-	logger::info(FMT_STRING("  [Debug] Weapon={} Unarmed={} Armor={} MagicEffects={} Stagger={} Actors={}"),
-		Debug.LogWeaponCalcs, Debug.LogUnarmedCalcs, Debug.LogArmorCalcs, Debug.LogMagicEffectCalcs, Debug.LogStaggerCalcs, Debug.LogActorCalcs);
+	logger::info(FMT_STRING(
+					 "  [Debug] Weapon={} Unarmed={} Armor={} MagicEffects={} Stagger={} Perks={} Actors={}"),
+		Debug.LogWeaponCalcs,
+		Debug.LogUnarmedCalcs,
+		Debug.LogArmorCalcs,
+		Debug.LogMagicEffectCalcs,
+		Debug.LogStaggerCalcs,
+		Debug.LogPerkCalcs,
+		Debug.LogActorCalcs);
 }
 
 void Settings::LoadJSON(const wchar_t* a_path)
 {
 	std::ifstream i(a_path);
+
 	if (i.is_open()) {
 		try {
 			i >> JSONSettings;
+
+			RaceWeightCache.clear();
+
+			MinRaceWeight = std::numeric_limits<float>::max();
+			MaxRaceWeight = std::numeric_limits<float>::lowest();
+
+			if (JSONSettings.contains("Races")) {
+				for (auto& [raceID, value] : JSONSettings["Races"].items()) {
+					float weight = static_cast<float>(value);
+
+					RaceWeightCache[raceID] = weight;
+
+					MinRaceWeight = std::min(MinRaceWeight, weight);
+					MaxRaceWeight = std::max(MaxRaceWeight, weight);
+				}
+			}
+
+			logger::info(FMT_STRING("JSON Loaded Successfully:"));
+			logger::info(
+				FMT_STRING("  [Races] Loaded {} race weights"),
+				RaceWeightCache.size());
+
+			for (const auto& [raceID, weight] : RaceWeightCache) {
+				logger::info(
+					FMT_STRING("    {} = {}"),
+					raceID,
+					weight);
+			}
+
 		} catch (const std::exception& e) {
 			logger::error(FMT_STRING("Failed to parse JSON file at {}: {}"),
-				SKSE::stl::utf16_to_utf8(a_path).value_or(""), e.what());
+				SKSE::stl::utf16_to_utf8(a_path).value_or(""),
+				e.what());
 		}
 	}
 }

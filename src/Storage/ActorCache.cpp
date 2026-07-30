@@ -3,7 +3,7 @@
 bool TESFormDeleteEventHandler::Register()
 {
 	static TESFormDeleteEventHandler singleton;
-	auto                        ScriptEventSource = RE::ScriptEventSourceHolder::GetSingleton();
+	auto                             ScriptEventSource = RE::ScriptEventSourceHolder::GetSingleton();
 
 	if (!ScriptEventSource) {
 		logger::error("Script event source not found");
@@ -46,8 +46,6 @@ RE::BSEventNotifyControl TESEquipEventEventHandler::ProcessEvent(const RE::TESEq
 	return RE::BSEventNotifyControl();
 }
 
-
-
 void ActorCache::FormDelete(RE::FormID a_formID)
 {
 	std::lock_guard<std::shared_mutex> lk(formCacheLock);
@@ -66,7 +64,7 @@ void ActorCache::EquipEvent(const RE::TESEquipEvent* a_event)
 					if (auto armor = form->As<RE::TESObjectARMO>()) {
 						weight = armor->GetWeight();
 						valid = true;
-					} else if (auto weapon = form->As<RE::TESObjectARMO>()) {
+					} else if (auto weapon = form->As<RE::TESObjectWEAP>()) {
 						weight = weapon->GetWeight();
 						valid = true;
 					}
@@ -141,7 +139,7 @@ float ActorCache::GetOrCreateCachedWeight(RE::Actor* a_actor)
 	}
 	return formCache.at(a_actor->formID).trueWeightValue;
 }
-void ActorCache::Revert() 
+void ActorCache::Revert()
 {
 	std::lock_guard<std::shared_mutex> lk(formCacheLock);
 	formCache.clear();

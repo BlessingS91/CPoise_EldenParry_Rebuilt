@@ -14,6 +14,12 @@ public:
 		Hooks::Install();
 	}
 
+	void LogEffectInfo(
+		RE::Actor*        a_target,
+		RE::ActiveEffect* a_effect,
+		RE::ActorValue    a_actorValue,
+		float             a_magnitudeDelta,
+		RE::Actor*        a_aggressor);
 	float CalculateEffectMultiplier(RE::ActorValue a_actorValue, bool a_detrimental);
 	void  ProcessValueModifier(RE::Actor* a_target, RE::ActorValue a_actorValue, float a_magnitudeDelta, RE::Actor* a_caster);
 	float ApplyMagicPoiseResistance(RE::Actor* a_target, float a_damage);

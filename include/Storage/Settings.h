@@ -4,7 +4,6 @@
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
-
 namespace RE
 {
 	enum class DIFFICULTY : std::int32_t
@@ -21,7 +20,10 @@ namespace RE
 class Settings
 {
 public:
-	[[nodiscard]] static Settings* GetSingleton()
+	std::unordered_map<std::string, float> RaceWeightCache;
+	float                                  MinRaceWeight{ 0.0f };
+	float                                  MaxRaceWeight{ 0.0f };
+	[[nodiscard]] static Settings*         GetSingleton()
 	{
 		static Settings singleton;
 		return &singleton;
@@ -122,6 +124,8 @@ public:
 	{
 		float DamageMultiplier{ 1.5f };
 
+		float ScalingCurve{ 4.0f };
+
 	} Creature;
 
 	// ==========================
@@ -196,6 +200,8 @@ public:
 
 		float EquipmentReferenceMultiplier{ 5.0f };
 
+		float LevelDifferenceMult{ 0.01f };
+
 	} Global;
 
 	// ==========================
@@ -234,6 +240,8 @@ public:
 		bool LogStaggerCalcs{ false };
 
 		bool LogActorCalcs{ false };
+
+		bool LogPerkCalcs{ false };
 
 	} Debug;
 

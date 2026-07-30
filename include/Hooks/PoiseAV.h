@@ -31,13 +31,18 @@ public:
 	float Score_GetBaseActorValue(RE::Actor* a_actor);
 	float GetActorValueMax(RE::Actor* a_actor);
 	bool  IsActorPerformingAction(RE::Actor* a_actor);
+	float GetWardPoiseReduction(RE::Actor* a_actor);
 	float ApplyAttackOfOpportunityMult(RE::Actor* a_target, float a_poiseDamage);
 	float ApplyDifficultyScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage);
+	float ApplyLevelDifferenceScaling(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage);
 	float CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* avManager);
-	void  HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, float a_poiseDamagePercent, float a_poise, AVManager* avManager);
-	void  DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, RE::HitData* a_hitData = nullptr);
-	void  Update(RE::Actor* a_actor, float a_delta);
-	void  GarbageCollection();
+	void  HandlePoiseBreak(
+		RE::Actor* a_target,
+		RE::Actor* a_aggressor,
+		float      a_impactPercent);
+	void DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, float a_poiseDamage, RE::HitData* a_hitData = nullptr);
+	void Update(RE::Actor* a_actor, float a_delta);
+	void GarbageCollection();
 
 	void Cast_Spell(RE::Actor* a_actor, std::string a_spell, float a_mag)
 	{
@@ -47,26 +52,6 @@ public:
 			}
 		}
 	};
-
-	//static void TryPushActorAway(RE::Actor* target, [[maybe_unused]] float staggerMult, RE::Actor* aggressor)
-	//{
-	//	if (auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()) {
-	//		if (auto script = scriptFactory->Create()) {
-	//			script->SetCommand(fmt::format(FMT_STRING("PushActorAway {:X} 0"), target->GetFormID()));
-	//			script->CompileAndRun(aggressor);
-	//		}
-	//	}
-	//}
-
-	//static void TryApplyHavokImpulse(RE::Actor* target, float afX, float afY, float afZ, float afMagnitude)
-	//{
-	//	if (auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()) {
-	//		if (auto script = scriptFactory->Create()) {
-	//			script->SetCommand(fmt::format(FMT_STRING("ApplyHavokImpulse {} {} {} {}"), afX, afY, afZ, afMagnitude));
-	//			script->CompileAndRun(target);
-	//		}
-	//	}
-	//}
 
 	RE::TESFaction* ForceFullBodyStagger;
 
@@ -80,59 +65,6 @@ public:
 	bool            appliedStagger = false;
 	std::thread::id staggerThread;
 
-	// POISE animations. Didn't like it
-	//static void TryStaggerCustom(RE::Actor* a_target, float a_staggerMult, RE::Actor* a_aggressor)
-	//{
-	//	float stagDir;
-	//	if (a_target == a_aggressor || a_aggressor == nullptr) {
-	//		stagDir = 0.0f;
-	//	} else {
-	//		auto hitPos = a_target->GetPosition();
-	//		auto heading = a_aggressor->GetHeadingAngle(hitPos, false);
-	//		stagDir = (heading >= 0.0f) ? heading / 360.0f : (360.0f + heading) / 360.0f;
-	//	}
-	//	a_target->SetGraphVariableFloat("staggerDirection", stagDir);  // set direction
-	//	a_target->SetGraphVariableFloat("staggerMagnitude", a_staggerMult);
-	//	static RE::BSFixedString str = NULL;
-	//	if (a_staggerMult <= 0.25) {
-	//		if (stagDir > 0.25f && stagDir < 0.75f) {
-	//			str = "poise_small_start_fwd";
-	//		} else {
-	//			str = "poise_small_start";
-	//		}
-	//	} else if (a_staggerMult <= 0.75) {
-	//		if (stagDir > 0.25f && stagDir < 0.75f) {
-	//			str = "poise_med_start";
-	//		} else {
-	//			str = "poise_med_start_fwd";
-	//		}
-	//	} else if (a_staggerMult <= 1) {
-	//		if (stagDir > 0.25f && stagDir < 0.75f) {
-	//			str = "poise_large_start";
-	//		} else {
-	//			str = "poise_large_start_fwd";
-	//		}
-	//	} else if (a_staggerMult > 1.0) {
-	//		if (stagDir > 0.25f && stagDir < 0.75f) {
-	//			str = "poise_largest_start";
-	//		} else {
-	//			str = "poise_large_start_fwd";
-	//		}
-	//	}
-	//	a_target->NotifyAnimationGraph(str);  // play animation
-	//	a_target->actorState2.staggered = true;
-	//}
-
-	// if(a_aggressor){
-	// 	auto headingAngle = a_target->GetHeadingAngle(a_aggressor->GetPosition(), false);
-	// 	auto direction = (headingAngle >= 0.0f) ? headingAngle / 360.0f : (360.0f + headingAngle) / 360.0f;
-	// 	a_target->SetGraphVariableFloat("staggerDirection", direction);
-	// }
-
-	// a_target->SetGraphVariableFloat("staggerMagnitude", a_staggerMult);
-
-	// a_target->NotifyAnimationGraph("staggerStart");
-
 	static void TryStagger(RE::Actor* a_target, float a_staggerMult, RE::Actor* a_aggressor)
 	{
 		a_target->SetGraphVariableBool("bPoise_IsStaggered", true);
@@ -142,13 +74,6 @@ public:
 		using func_t = decltype(&TryStagger);
 		REL::Relocation<func_t> func{ REL::RelocationID(36700, 37710) };
 		func(a_target, a_staggerMult, a_aggressor);
-
-		// if(a_aggressor){
-		// 	logger::info(" Stagger function triggered. Victim: {}  Aggressor: {}", a_target->GetName(), a_aggressor->GetName());
-
-		// }else{
-		// 	logger::info(" Stagger function triggered. Victim {}", a_target->GetName());
-		// }
 	}
 
 	static bool GetBoolVariable(RE::Actor* a_actor, std::string a_string)

@@ -23,3 +23,10 @@ add_custom_command(TARGET ChocolatePoise POST_BUILD
     "$<TARGET_FILE:ChocolatePoise>"
     "E:/ModLists/Skyrim Modding Setup/mods/Chocolate Poise - Reforged/skse/plugins/"
 )
+add_custom_command(TARGET ChocolatePoise POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    "$<TARGET_FILE:ChocolatePoise>"
+    "E:/ModLists/Skyrim Modding Setup/mods/Chocolate Poise - Reforged/skse/plugins/"
+
+    COMMAND cmd /C echo Build finished at %%DATE%% %%TIME%%
+)

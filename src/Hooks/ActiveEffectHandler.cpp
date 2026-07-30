@@ -19,7 +19,11 @@ float ActiveEffectHandler::CalculateEffectMultiplier(RE::ActorValue a_actorValue
 	return 0;
 }
 
-void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorValue a_actorValue, float a_magnitudeDelta, RE::Actor* a_aggressor)
+void ActiveEffectHandler::ProcessValueModifier(
+	RE::Actor*     a_target,
+	RE::ActorValue a_actorValue,
+	float          a_magnitudeDelta,
+	RE::Actor*     a_aggressor)
 {
 	if (!a_target ||
 		a_target == a_aggressor ||
@@ -28,6 +32,8 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 		return;
 	}
 
+	auto settings = Settings::GetSingleton();
+
 	float effectMultiplier = CalculateEffectMultiplier(a_actorValue, a_magnitudeDelta > 0);
 
 	if (effectMultiplier <= 0.0f) {
@@ -35,7 +41,6 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 	}
 
 	auto poiseAV = PoiseAV::GetSingleton();
-	auto settings = Settings::GetSingleton();
 
 	if (!poiseAV->CanDamageActor(a_target)) {
 		return;
@@ -43,53 +48,77 @@ void ActiveEffectHandler::ProcessValueModifier(RE::Actor* a_target, RE::ActorVal
 
 	float poiseDamage = effectMultiplier * a_magnitudeDelta;
 
-	if (poiseDamage == 0.0f) {
+	if (poiseDamage <= 0.0f) {
 		return;
 	}
 
+	float baseMult = 1.0f;
+
+	// Apply perk modifiers
 	if (a_aggressor) {
-		if (poiseDamage > 0) {
-			poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
-		}
+		PoiseAV::ApplyPerkEntryPoint(
+			34,
+			a_aggressor->As<RE::Character>(),
+			a_target->As<RE::Character>(),
+			&baseMult);
+
+		PoiseAV::ApplyPerkEntryPoint(
+			33,
+			a_target->As<RE::Character>(),
+			a_aggressor->As<RE::Character>(),
+			&baseMult);
+
+		poiseDamage *= baseMult;
 	}
 
-	// High-end magic poise scaling
-	// Prevents extreme spell effects from instantly deleting all poise,
-	// while preserving strong spells.
+	// Soft cap extreme magic spikes
+	float preClampDamage = poiseDamage;
+
 	if (poiseDamage > 50.0f) {
 		float excessDamage = poiseDamage - 50.0f;
-
 		poiseDamage = 50.0f + (excessDamage * 0.5f);
 	}
 
 	float preResistDamage = poiseDamage;
 
-	// Only hostile magic effects are reduced by resistance.
-	// Healing/recovery effects bypass resistance.
-	if (poiseDamage > 0.0f) {
-		poiseDamage = ApplyMagicPoiseResistance(a_target, poiseDamage);
+	// Apply magic resistance
+	poiseDamage = ApplyMagicPoiseResistance(a_target, poiseDamage);
+
+	float preLevelDamage = poiseDamage;
+
+	// Apply level scaling
+	if (a_aggressor) {
+		poiseDamage *= settings->GetDamageMultiplier(a_aggressor, a_target);
 	}
 
-	if (settings->Debug.LogMagicEffectCalcs && std::abs(poiseDamage) >= 1.0f) {
-		float resistMultiplier =
-			preResistDamage != 0.0f ? poiseDamage / preResistDamage : 1.0f;
+	float preDifficultyDamage = poiseDamage;
 
+	// Apply difficulty scaling
+	// poiseDamage *= settings->GetDifficultyMultiplier();
+
+	// Prevent meaningless zero damage ticks
+	poiseDamage = (std::max)(poiseDamage, 0.075f);
+
+	if (settings->Debug.LogMagicEffectCalcs && poiseDamage >= 1.0f) {
 		logger::info(
 			"[Magic Effect Poise] Target={}({:08X}) Aggressor={}({:08X}) AV={} "
-			"Type={} RawMagnitude={} EffectMultiplier={} "
-			"BeforeResist={} ResistMultiplier={} FinalDamage={}",
+			"RawMagnitude={} EffectMultiplier={} BaseMult={} "
+			"PreClamp={} PreResist={} PreLevel={} PreDifficulty={} Final={}",
 			a_target->GetName(),
 			a_target->GetFormID(),
 			a_aggressor ? a_aggressor->GetName() : "NULL",
 			a_aggressor ? a_aggressor->GetFormID() : 0,
 			std::string(magic_enum::enum_name(a_actorValue)),
-			a_magnitudeDelta > 0 ? "Damage" : "Recovery",
 			a_magnitudeDelta,
 			effectMultiplier,
+			baseMult,
+			preClampDamage,
 			preResistDamage,
-			resistMultiplier,
+			preLevelDamage,
+			preDifficultyDamage,
 			poiseDamage);
 	}
+
 	poiseAV->DamageAndCheckPoise(a_target, a_aggressor, poiseDamage);
 }
 

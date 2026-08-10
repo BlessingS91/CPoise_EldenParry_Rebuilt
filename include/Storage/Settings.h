@@ -63,6 +63,8 @@ public:
 
 		float RegenRate{ 0.045f };
 
+		float RegenDelay{ 1.0f };
+
 	} Health;
 
 	// ==========================
@@ -70,7 +72,9 @@ public:
 	// ==========================
 	struct
 	{
-		float ArmorMult{ 0.020f };
+		float ArmorMult{ 1.0f };
+
+		float WeightContribution{ 0.005f };
 
 	} Armor;
 
@@ -88,6 +92,8 @@ public:
 		float ArrowDamageMult{ 0.25f };
 
 		float CrossbowMult{ 1.15f };
+
+		float BowDamageMult{ 1.0f };
 
 	} Weapon;
 
@@ -137,6 +143,8 @@ public:
 
 		float BlockingMult{ 1.0f };
 
+		float PowerAttackBlockingMult{ 0.5 };
+
 	} Blocking;
 
 	// ==========================
@@ -171,6 +179,8 @@ public:
 	struct
 	{
 		float ResistanceMult{ 1.0f };
+
+		float DamageMult{ 1.0f };
 
 	} Magic;
 

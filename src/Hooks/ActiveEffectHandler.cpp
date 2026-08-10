@@ -3,7 +3,7 @@
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
 
-#include "ClibUtil/editorID.hpp"
+//#include "ClibUtil/editorID.hpp"
 
 float ActiveEffectHandler::CalculateEffectMultiplier(
 	RE::ActorValue a_actorValue,
@@ -87,7 +87,9 @@ void ActiveEffectHandler::ProcessValueModifier(
 			a_magnitudeDelta);
 	}
 
-	float poiseDamage = effectMultiplier * a_magnitudeDelta;
+	float poiseDamage =
+		effectMultiplier *
+		a_magnitudeDelta;
 
 	if (logMagic) {
 		logger::info(
@@ -99,31 +101,6 @@ void ActiveEffectHandler::ProcessValueModifier(
 
 	if (poiseDamage <= 0.0f) {
 		return;
-	}
-
-	//
-	// Trap modifier
-	//
-
-	bool isTrap =
-		IsActorAffectedByTrap(a_target);
-
-	if (!isTrap && a_aggressor) {
-		isTrap = IsActorAffectedByTrap(a_aggressor);
-	}
-
-	if (isTrap) {
-		const float before = poiseDamage;
-
-		poiseDamage *= settings->Environment.TrapMult;
-
-		if (logMagic) {
-			logger::info(
-				"[Trap Applied] Mult={} Before={} After={}",
-				settings->Environment.TrapMult,
-				before,
-				poiseDamage);
-		}
 	}
 
 	//
@@ -178,14 +155,33 @@ void ActiveEffectHandler::ProcessValueModifier(
 	}
 
 	//
+	// Magic damage multiplier
+	//
+
+	const float magicDamageBefore = poiseDamage;
+
+	poiseDamage *= settings->Magic.DamageMult;
+
+	if (logMagic) {
+		logger::info(
+			"[Magic Damage Mult] Mult={} Before={} After={}",
+			settings->Magic.DamageMult,
+			magicDamageBefore,
+			poiseDamage);
+	}
+
+	//
 	// Magic scaling
 	//
 
-	if (poiseDamage > 50.0f) {
+	if (poiseDamage > 25.0f) {
 		const float before = poiseDamage;
 
+		const float excess = poiseDamage - 25.0f;
+
 		poiseDamage =
-			50.0f + ((poiseDamage - 50.0f) * 0.5f);
+			25.0f +
+			(excess / (1.0f + (excess / 100.0f)));
 
 		if (logMagic) {
 			logger::info(
@@ -204,10 +200,9 @@ void ActiveEffectHandler::ProcessValueModifier(
 
 	if (logMagic) {
 		logger::info(
-			"[Magic Final] Target={} AV={} Trap={} Final={} BeforeResist={}",
+			"[Magic Final] Target={} AV={} Final={} BeforeResist={}",
 			a_target->GetName(),
 			avName,
-			isTrap,
 			poiseDamage,
 			beforeResist);
 	}
@@ -299,280 +294,312 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(
 	return finalDamage;
 }
 
-bool ActiveEffectHandler::IsTrapEffect(RE::EffectSetting* a_mgef)
+//API Function
+float ActiveEffectHandler::GetEffectiveMagicResistance(RE::Actor* a_target)
 {
-	if (!a_mgef) {
-		return false;
+	if (!a_target) {
+		return 0.0f;
 	}
 
-	const auto formID = a_mgef->GetFormID();
+	auto avOwner = a_target->AsActorValueOwner();
 
-	if (auto it = _trapEffectCache.find(formID);
-		it != _trapEffectCache.end()) {
-		return it->second;
-	}
+	const float magicResist =
+		avOwner->GetActorValue(RE::ActorValue::kResistMagic);
 
-	auto settings = Settings::GetSingleton();
+	const float fireResist =
+		avOwner->GetActorValue(RE::ActorValue::kResistFire);
 
-	//
-	// JSON ActorValue filter FIRST
-	//
+	const float frostResist =
+		avOwner->GetActorValue(RE::ActorValue::kResistFrost);
 
-	auto actorValue = a_mgef->data.primaryAV;
+	const float shockResist =
+		avOwner->GetActorValue(RE::ActorValue::kResistShock);
 
-	std::string avName(
-		magic_enum::enum_name(actorValue));
+	const float elementalAverage =
+		(fireResist + frostResist + shockResist) / 3.0f;
 
-	if (avName.empty()) {
-		_trapEffectCache.emplace(formID, false);
-		return false;
-	}
-
-	avName.erase(0, 1);
-
-	auto jsonAV =
-		settings->JSONSettings["Magic Effects"]
-							  ["Actor Values"]
-							  ["Damage"]
-							  [avName];
-
-	if (jsonAV == nullptr ||
-		static_cast<float>(jsonAV) <= 0.0f) {
-		_trapEffectCache.emplace(formID, false);
-		return false;
-	}
-
-	//
-	// ONLY NOW check Trap EditorID / Keywords
-	//
-
-	auto containsTrap = [](std::string a_string) {
-		std::ranges::transform(
-			a_string,
-			a_string.begin(),
-			[](unsigned char c) {
-				return static_cast<char>(std::tolower(c));
-			});
-
-		return a_string.contains("trap") ||
-		       a_string.contains("magictrap");
-	};
-
-	bool isTrap = false;
-
-	auto editorID = clib_util::editorID::get_editorID(a_mgef);
-
-	if (!editorID.empty() && containsTrap(editorID)) {
-		isTrap = true;
-	}
-
-	if (!isTrap) {
-		for (std::uint32_t i = 0; i < a_mgef->numKeywords; ++i) {
-			auto* keyword = a_mgef->keywords[i];
-
-			if (!keyword) {
-				continue;
-			}
-
-			auto keywordID =
-				clib_util::editorID::get_editorID(keyword);
-
-			if (!keywordID.empty() && containsTrap(keywordID)) {
-				isTrap = true;
-				break;
-			}
-		}
-	}
-
-	_trapEffectCache.emplace(formID, isTrap);
-
-	return isTrap;
+	return std::clamp(
+		(magicResist * 0.65f) +
+			(elementalAverage * 0.35f),
+		-100.0f,
+		100.0f);
 }
 
-bool ActiveEffectHandler::IsActorAffectedByTrap(RE::Actor* a_actor)
-{
-	if (!a_actor) {
-		return false;
-	}
+//Unused Trap stuff
+// bool ActiveEffectHandler::IsTrapEffect(RE::EffectSetting* a_mgef)
+// {
+// 	if (!a_mgef) {
+// 		return false;
+// 	}
 
-	auto* magicTarget = a_actor->AsMagicTarget();
-	if (!magicTarget) {
-		return false;
-	}
+// 	const auto formID = a_mgef->GetFormID();
 
-	auto* activeEffects = magicTarget->GetActiveEffectList();
-	if (!activeEffects) {
-		return false;
-	}
+// 	if (auto it = _trapEffectCache.find(formID);
+// 		it != _trapEffectCache.end()) {
+// 		return it->second;
+// 	}
 
-	auto settings = Settings::GetSingleton();
+// 	auto settings = Settings::GetSingleton();
 
-	for (auto* effect : *activeEffects) {
-		if (!effect ||
-			!effect->effect ||
-			!effect->effect->baseEffect) {
-			continue;
-		}
+// 	//
+// 	// JSON ActorValue filter FIRST
+// 	//
 
-		auto* mgef = effect->effect->baseEffect;
+// 	auto actorValue = a_mgef->data.primaryAV;
 
-		if (!IsTrapEffect(mgef)) {
-			continue;
-		}
+// 	std::string avName(
+// 		magic_enum::enum_name(actorValue));
 
-		if (settings->Debug.LogMagicEffectCalcs) {
-			auto editorID = clib_util::editorID::get_editorID(mgef);
+// 	if (avName.empty()) {
+// 		_trapEffectCache.emplace(formID, false);
+// 		return false;
+// 	}
 
-			logger::info(
-				"[Active TRAP MGEF] Actor={} Name={} EditorID={} FormID={:08X}",
-				a_actor->GetName(),
-				mgef->GetName(),
-				editorID.empty() ? "NULL" : editorID.c_str(),
-				mgef->GetFormID());
+// 	avName.erase(0, 1);
 
-			for (std::uint32_t i = 0; i < mgef->numKeywords; ++i) {
-				auto* keyword = mgef->keywords[i];
-				if (!keyword) {
-					continue;
-				}
+// 	auto jsonAV =
+// 		settings->JSONSettings["Magic Effects"]
+// 							  ["Actor Values"]
+// 							  ["Damage"]
+// 							  [avName];
 
-				auto keywordID = clib_util::editorID::get_editorID(keyword);
+// 	if (jsonAV == nullptr ||
+// 		static_cast<float>(jsonAV) <= 0.0f) {
+// 		_trapEffectCache.emplace(formID, false);
+// 		return false;
+// 	}
 
-				logger::info(
-					"    Keyword={} EditorID={} FormID={:08X}",
-					keyword->GetName(),
-					keywordID.empty() ? "NULL" : keywordID.c_str(),
-					keyword->GetFormID());
-			}
-		}
+// 	//
+// 	// ONLY NOW check Trap EditorID / Keywords
+// 	//
 
-		return true;
-	}
+// 	auto containsTrap = [](std::string a_string) {
+// 		std::ranges::transform(
+// 			a_string,
+// 			a_string.begin(),
+// 			[](unsigned char c) {
+// 				return static_cast<char>(std::tolower(c));
+// 			});
 
-	return false;
-}
+// 		return a_string.contains("trap") ||
+// 		       a_string.contains("magictrap");
+// 	};
 
-void ActiveEffectHandler::DumpTrapEffects()
-{
-	auto containsTrap = [](std::string a_string) {
-		std::ranges::transform(
-			a_string,
-			a_string.begin(),
-			[](unsigned char c) {
-				return static_cast<char>(std::tolower(c));
-			});
+// 	bool isTrap = false;
 
-		return a_string.contains("trap") ||
-		       a_string.contains("magictrap");
-	};
+// 	auto editorID = clib_util::editorID::get_editorID(a_mgef);
 
-	auto dataHandler = RE::TESDataHandler::GetSingleton();
+// 	if (!editorID.empty() && containsTrap(editorID)) {
+// 		isTrap = true;
+// 	}
 
-	if (!dataHandler) {
-		return;
-	}
+// 	if (!isTrap) {
+// 		for (std::uint32_t i = 0; i < a_mgef->numKeywords; ++i) {
+// 			auto* keyword = a_mgef->keywords[i];
 
-	auto settings = Settings::GetSingleton();
+// 			if (!keyword) {
+// 				continue;
+// 			}
 
-	logger::info("========== FILTERED TRAP MGEF DUMP START ==========");
+// 			auto keywordID =
+// 				clib_util::editorID::get_editorID(keyword);
 
-	for (auto* mgef : dataHandler->GetFormArray<RE::EffectSetting>()) {
-		if (!mgef) {
-			continue;
-		}
+// 			if (!keywordID.empty() && containsTrap(keywordID)) {
+// 				isTrap = true;
+// 				break;
+// 			}
+// 		}
+// 	}
 
-		//
-		// JSON ActorValue filter
-		//
+// 	_trapEffectCache.emplace(formID, isTrap);
 
-		auto actorValue = mgef->data.primaryAV;
+// 	return isTrap;
+// }
 
-		std::string avName(
-			magic_enum::enum_name(actorValue));
+// bool ActiveEffectHandler::IsActorAffectedByTrap(RE::Actor* a_actor)
+// {
+// 	if (!a_actor) {
+// 		return false;
+// 	}
 
-		if (avName.empty()) {
-			continue;
-		}
+// 	auto* magicTarget = a_actor->AsMagicTarget();
+// 	if (!magicTarget) {
+// 		return false;
+// 	}
 
-		// kHealth -> Health
-		avName.erase(0, 1);
+// 	auto* activeEffects = magicTarget->GetActiveEffectList();
+// 	if (!activeEffects) {
+// 		return false;
+// 	}
 
-		auto jsonValue =
-			settings->JSONSettings["Magic Effects"]
-								  ["Actor Values"]
-								  ["Damage"]
-								  [avName];
+// 	auto settings = Settings::GetSingleton();
 
-		if (jsonValue == nullptr ||
-			static_cast<float>(jsonValue) <= 0.0f) {
-			continue;
-		}
+// 	for (auto* effect : *activeEffects) {
+// 		if (!effect ||
+// 			!effect->effect ||
+// 			!effect->effect->baseEffect) {
+// 			continue;
+// 		}
 
-		const float jsonMultiplier =
-			static_cast<float>(jsonValue);
+// 		auto* mgef = effect->effect->baseEffect;
 
-		//
-		// Trap EditorID / Keyword lookup
-		//
+// 		if (!IsTrapEffect(mgef)) {
+// 			continue;
+// 		}
 
-		bool isTrap = false;
+// 		if (settings->Debug.LogMagicEffectCalcs) {
+// 			auto editorID = clib_util::editorID::get_editorID(mgef);
 
-		auto editorID =
-			clib_util::editorID::get_editorID(mgef);
+// 			logger::info(
+// 				"[Active TRAP MGEF] Actor={} Name={} EditorID={} FormID={:08X}",
+// 				a_actor->GetName(),
+// 				mgef->GetName(),
+// 				editorID.empty() ? "NULL" : editorID.c_str(),
+// 				mgef->GetFormID());
 
-		if (!editorID.empty() &&
-			containsTrap(editorID)) {
-			isTrap = true;
-		}
+// 			for (std::uint32_t i = 0; i < mgef->numKeywords; ++i) {
+// 				auto* keyword = mgef->keywords[i];
+// 				if (!keyword) {
+// 					continue;
+// 				}
 
-		if (!isTrap) {
-			for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
-				auto* keyword = mgef->keywords[i];
+// 				auto keywordID = clib_util::editorID::get_editorID(keyword);
 
-				if (!keyword) {
-					continue;
-				}
+// 				logger::info(
+// 					"    Keyword={} EditorID={} FormID={:08X}",
+// 					keyword->GetName(),
+// 					keywordID.empty() ? "NULL" : keywordID.c_str(),
+// 					keyword->GetFormID());
+// 			}
+// 		}
 
-				auto keywordID =
-					clib_util::editorID::get_editorID(keyword);
+// 		return true;
+// 	}
 
-				if (!keywordID.empty() &&
-					containsTrap(keywordID)) {
-					isTrap = true;
-					break;
-				}
-			}
-		}
+// 	return false;
+// }
 
-		if (!isTrap) {
-			continue;
-		}
+// void ActiveEffectHandler::DumpTrapEffects()
+// {
+// 	auto containsTrap = [](std::string a_string) {
+// 		std::ranges::transform(
+// 			a_string,
+// 			a_string.begin(),
+// 			[](unsigned char c) {
+// 				return static_cast<char>(std::tolower(c));
+// 			});
 
-		logger::info(
-			"[TRAP MGEF] Name={} EditorID={} FormID={:08X} JSON_AV={} JSON_Mult={}",
-			mgef->GetName(),
-			editorID.empty() ? "NULL" : editorID.c_str(),
-			mgef->GetFormID(),
-			avName,
-			jsonMultiplier);
+// 		return a_string.contains("trap") ||
+// 		       a_string.contains("magictrap");
+// 	};
 
-		for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
-			auto* keyword = mgef->keywords[i];
+// 	auto dataHandler = RE::TESDataHandler::GetSingleton();
 
-			if (!keyword) {
-				continue;
-			}
+// 	if (!dataHandler) {
+// 		return;
+// 	}
 
-			auto keywordID =
-				clib_util::editorID::get_editorID(keyword);
+// 	auto settings = Settings::GetSingleton();
 
-			logger::info(
-				"    Keyword={} EditorID={} FormID={:08X}",
-				keyword->GetName(),
-				keywordID.empty() ? "NULL" : keywordID.c_str(),
-				keyword->GetFormID());
-		}
-	}
+// 	logger::info("========== FILTERED TRAP MGEF DUMP START ==========");
 
-	logger::info("========== FILTERED TRAP MGEF DUMP END ==========");
-}
+// 	for (auto* mgef : dataHandler->GetFormArray<RE::EffectSetting>()) {
+// 		if (!mgef) {
+// 			continue;
+// 		}
+
+// 		//
+// 		// JSON ActorValue filter
+// 		//
+
+// 		auto actorValue = mgef->data.primaryAV;
+
+// 		std::string avName(
+// 			magic_enum::enum_name(actorValue));
+
+// 		if (avName.empty()) {
+// 			continue;
+// 		}
+
+// 		// kHealth -> Health
+// 		avName.erase(0, 1);
+
+// 		auto jsonValue =
+// 			settings->JSONSettings["Magic Effects"]
+// 								  ["Actor Values"]
+// 								  ["Damage"]
+// 								  [avName];
+
+// 		if (jsonValue == nullptr ||
+// 			static_cast<float>(jsonValue) <= 0.0f) {
+// 			continue;
+// 		}
+
+// 		const float jsonMultiplier =
+// 			static_cast<float>(jsonValue);
+
+// 		//
+// 		// Trap EditorID / Keyword lookup
+// 		//
+
+// 		bool isTrap = false;
+
+// 		auto editorID =
+// 			clib_util::editorID::get_editorID(mgef);
+
+// 		if (!editorID.empty() &&
+// 			containsTrap(editorID)) {
+// 			isTrap = true;
+// 		}
+
+// 		if (!isTrap) {
+// 			for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
+// 				auto* keyword = mgef->keywords[i];
+
+// 				if (!keyword) {
+// 					continue;
+// 				}
+
+// 				auto keywordID =
+// 					clib_util::editorID::get_editorID(keyword);
+
+// 				if (!keywordID.empty() &&
+// 					containsTrap(keywordID)) {
+// 					isTrap = true;
+// 					break;
+// 				}
+// 			}
+// 		}
+
+// 		if (!isTrap) {
+// 			continue;
+// 		}
+
+// 		logger::info(
+// 			"[TRAP MGEF] Name={} EditorID={} FormID={:08X} JSON_AV={} JSON_Mult={}",
+// 			mgef->GetName(),
+// 			editorID.empty() ? "NULL" : editorID.c_str(),
+// 			mgef->GetFormID(),
+// 			avName,
+// 			jsonMultiplier);
+
+// 		for (std::uint32_t i = 0; i < mgef->numKeywords; i++) {
+// 			auto* keyword = mgef->keywords[i];
+
+// 			if (!keyword) {
+// 				continue;
+// 			}
+
+// 			auto keywordID =
+// 				clib_util::editorID::get_editorID(keyword);
+
+// 			logger::info(
+// 				"    Keyword={} EditorID={} FormID={:08X}",
+// 				keyword->GetName(),
+// 				keywordID.empty() ? "NULL" : keywordID.c_str(),
+// 				keyword->GetFormID());
+// 		}
+// 	}
+
+// 	logger::info("========== FILTERED TRAP MGEF DUMP END ==========");
+// }

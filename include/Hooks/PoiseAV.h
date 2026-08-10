@@ -104,6 +104,8 @@ public:
 		return func(entry, actor_a, actor_b, out);
 	}
 
+	std::unordered_map<RE::FormID, float> regenDelays;
+
 protected:
 	struct Hooks
 	{

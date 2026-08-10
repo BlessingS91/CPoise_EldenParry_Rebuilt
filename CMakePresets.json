@@ -1,34 +1,40 @@
 {
 	"configurePresets": [
 		{
+			"name": "cmake-dev",
+			"hidden": true,
 			"binaryDir": "${sourceDir}/build",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": {
 					"type": "STRING",
 					"value": "Release"
+				},
+				"CMAKE_EXPORT_COMPILE_COMMANDS": {
+					"type": "BOOL",
+					"value": "ON"
 				}
+			},
+			"warnings": {
+				"dev": true,
+				"deprecated": true
 			},
 			"errors": {
 				"deprecated": true
-			},
-			"hidden": true,
-			"name": "cmake-dev",
-			"warnings": {
-				"deprecated": true,
-				"dev": true
 			}
 		},
 		{
+			"name": "vcpkg",
+			"hidden": true,
 			"cacheVariables": {
 				"CMAKE_TOOLCHAIN_FILE": {
 					"type": "STRING",
 					"value": "C:/Users/spenc/Documents/Code/vcpkg/scripts/buildsystems/vcpkg.cmake"
 				}
-			},
-			"hidden": true,
-			"name": "vcpkg"
+			}
 		},
 		{
+			"name": "windows",
+			"hidden": true,
 			"cacheVariables": {
 				"CMAKE_MSVC_RUNTIME_LIBRARY": {
 					"type": "STRING",
@@ -38,53 +44,40 @@
 					"type": "STRING",
 					"value": "x64-windows-static-md"
 				}
-			},
-			"hidden": true,
-			"name": "windows"
+			}
 		},
 		{
-			"architecture": {
-				"strategy": "set",
-				"value": "x64"
-			},
-			"cacheVariables": {
-				"CMAKE_CXX_FLAGS": "/EHsc /MP /W4"
-			},
-			"generator": "Visual Studio 17 2022",
+			"name": "ninja-windows",
+			"hidden": true,
+			"generator": "Ninja",
 			"inherits": [
 				"cmake-dev",
 				"vcpkg",
 				"windows"
 			],
-			"hidden": true,
-			"name": "vs2022-windows",
-			"toolset": "v143"
+			"cacheVariables": {
+				"CMAKE_CXX_FLAGS": "/EHsc /MP /W4"
+			}
 		},
 		{
+			"name": "skyrim",
 			"binaryDir": "${sourceDir}/build/skyrim",
+			"inherits": [
+				"ninja-windows"
+			],
 			"cacheVariables": {
 				"BUILD_SKYRIM": true
-			},
-			"inherits": [
-				"cmake-dev",
-				"vcpkg",
-				"windows",
-				"vs2022-windows"
-			],
-			"name": "skyrim"
+			}
 		},
 		{
+			"name": "vr",
 			"binaryDir": "${sourceDir}/build/vr",
+			"inherits": [
+				"ninja-windows"
+			],
 			"cacheVariables": {
 				"BUILD_SKYRIMVR": true
-			},
-			"inherits": [
-				"cmake-dev",
-				"vcpkg",
-				"windows",
-				"vs2022-windows"
-			],
-			"name": "vr"
+			}
 		}
 	],
 	"version": 3

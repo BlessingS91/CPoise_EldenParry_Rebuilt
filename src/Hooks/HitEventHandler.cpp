@@ -1,8 +1,8 @@
 #include "Hooks/HitEventHandler.h"
-#include <algorithm>
-
+#include "Hooks/ActiveEffectHandler.h"
 #include "Hooks/PoiseAV.h"
 #include "Storage/Settings.h"
+#include <algorithm>
 #undef min
 #undef max
 #include <limits>
@@ -75,8 +75,8 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 	basePoiseFactor = std::clamp(basePoiseFactor, 0.0f, 1.0f);
 
 	// 6. Map the final curve output to your target poise range (15.0f min to 70.0f max)
-	float minPoise = 20.0f;
-	float maxPoise = 75.0f;
+	float minPoise = 25.0f;
+	float maxPoise = 100.0f;
 
 	// Assuming r2 naturally spans from 0.0 to a theoretical ceiling,
 	// we can lerp or scale it directly across your target poise bounds:
@@ -144,16 +144,29 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 		return 0.0f;
 	}
 
-	float bowDamage = GetWeaponDamage(data.weaponSource);
+	bool isCrossbow =
+		data.weaponSource->weaponData.animationType ==
+		RE::WEAPON_TYPE::kCrossbow;
+
+	float weaponDamage = GetWeaponDamage(data.weaponSource);
+
+	float weaponFactor = 1.0f;
 
 	float drawFactor = 1.0f;
 
-	float bowSpeed = data.weaponSource->GetSpeed();
-	if (bowSpeed > 0.0f) {
-		drawFactor =
-			1.0f +
-			((1.0f / bowSpeed) - 1.0f) *
-				settings->Weapon.BowDrawSpeedMult;
+	if (isCrossbow) {
+		weaponFactor = settings->Weapon.CrossbowMult;
+	} else {
+		weaponFactor = settings->Weapon.BowDamageMult;
+
+		float bowSpeed = data.weaponSource->GetSpeed();
+
+		if (bowSpeed > 0.0f) {
+			drawFactor =
+				1.0f +
+				((1.0f / bowSpeed) - 1.0f) *
+					settings->Weapon.BowDrawSpeedMult;
+		}
 	}
 
 	float arrowDamage = 0.0f;
@@ -164,10 +177,11 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 	}
 
 	float arrowContribution =
-		arrowDamage * settings->Weapon.ArrowDamageMult;
+		arrowDamage *
+		settings->Weapon.ArrowDamageMult;
 
 	float stagger =
-		(bowDamage * drawFactor) +
+		(weaponDamage * drawFactor * weaponFactor) +
 		arrowContribution;
 
 	float bowBonus = 0.0f;
@@ -182,18 +196,20 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 
 	if (settings->Debug.LogWeaponCalcs) {
 		logger::info(
-			"[Bow Calc] Weapon={} Ammo={} "
-			"BowDamage={:.2f} BowSpeed={:.3f} DrawFactor={:.3f} "
-			"ArrowDamage={:.2f} ArrowMult={:.3f} ArrowContribution={:.2f} "
-			"BowBonus={:.2f} FinalStagger={:.2f}",
+			"[Projectile Calc] Weapon={} Type={} Ammo={} "
+			"WeaponDamage={:.2f} WeaponFactor={:.2f} "
+			"DrawFactor={:.3f} ArrowDamage={:.2f} "
+			"ArrowMult={:.3f} ArrowContribution={:.2f} "
+			"BowBonus={:.2f} Final={:.2f}",
 			data.weaponSource->GetName(),
+			isCrossbow ? "Crossbow" : "Bow",
 			data.ammoSource ? data.ammoSource->GetName() : "NULL",
-			bowDamage,
-			bowSpeed,
+			weaponDamage,
+			weaponFactor,
 			drawFactor,
 			arrowDamage,
 			settings->Weapon.ArrowDamageMult,
-			arrowDamage * settings->Weapon.ArrowDamageMult,
+			arrowContribution,
 			bowBonus,
 			stagger);
 	}
@@ -211,48 +227,28 @@ bool HitEventHandler::IsShieldStrike(RE::Actor* actor, RE::HitData* hitData)
 		return false;
 	}
 
-	// CommonLib:
-	// true  = left hand
-	// false = right hand
 	auto leftHand = actor->GetEquippedObject(true);
-	auto rightHand = actor->GetEquippedObject(false);
-
-	logger::info(
-		FMT_STRING("[ShieldCheck] Actor={} Weapon={} Skill={} Flags={} Left={} Right={}"),
-		actor->GetName(),
-		hitData->weapon ? hitData->weapon->GetName() : "NULL",
-		magic_enum::enum_name(hitData->skill),
-		hitData->flags.underlying(),
-		leftHand ? leftHand->GetName() : "NULL",
-		rightHand ? rightHand->GetName() : "NULL");
 
 	auto shield = leftHand ? leftHand->As<RE::TESObjectARMO>() : nullptr;
 
-	if (!shield) {
-		logger::info("[ShieldCheck] Left hand is not armor.");
-		return false;
-	}
-
-	logger::info(
-		FMT_STRING("[ShieldCheck] LeftArmor={} IsShield={}"),
-		shield->GetName(),
-		shield->IsShield());
-
-	if (!shield->IsShield()) {
+	if (!shield || !shield->IsShield()) {
 		return false;
 	}
 
 	const auto flags = hitData->flags.underlying();
 
 	if (flags != 196608 && flags != 196609) {
-		logger::info("[ShieldCheck] Flags {} are not shield strike flags.", flags);
 		return false;
 	}
 
-	logger::info(
-		FMT_STRING("[Shield Strike FOUND] Actor={} Flags={}"),
-		actor->GetName(),
-		flags);
+	if (Settings::GetSingleton()->Debug.LogWeaponCalcs) {
+		logger::info(
+			FMT_STRING(
+				"[Shield Strike FOUND] Actor={} Shield={} Flags={}"),
+			actor->GetName(),
+			shield->GetName(),
+			flags);
+	}
 
 	return true;
 }
@@ -329,8 +325,8 @@ float HitEventHandler::GetShieldDamage(RE::Actor* a_actor)
 
 	float poiseDamage =
 		std::lerp(
-			20.0f,
-			75.0f,
+			25.0f,
+			100.0f,
 			baseFactor);
 
 	// ==========================
@@ -412,8 +408,8 @@ float HitEventHandler::GetUnarmedDamage(RE::Actor* a_actor)
 
 	float poiseDamage =
 		std::lerp(
-			20.0f,
-			75.0f,
+			25.0f,
+			100.0f,
 			r2);
 
 	// ==========================
@@ -664,6 +660,136 @@ float HitEventHandler::GetMiscDamage()
 	return 5.0f * multiplier;
 }
 
+float HitEventHandler::GetStaffDamage(
+	RE::Actor*         a_actor,
+	RE::TESObjectWEAP* a_staff)
+{
+	if (!a_actor || !a_staff) {
+		return 0.0f;
+	}
+
+	auto* enchantment = a_staff->formEnchanting;
+
+	if (!enchantment) {
+		return 0.0f;
+	}
+
+	auto settings = Settings::GetSingleton();
+
+	float totalDamage = 0.0f;
+
+	for (const auto& effect : enchantment->effects) {
+		if (!effect || !effect->baseEffect) {
+			continue;
+		}
+
+		const auto actorValue =
+			effect->baseEffect->data.primaryAV;
+
+		const float magnitude =
+			effect->effectItem.magnitude;
+
+		std::string avName{
+			magic_enum::enum_name(actorValue)
+		};
+
+		if (avName.empty()) {
+			continue;
+		}
+
+		// Remove k prefix
+		// kHealth -> Health
+		avName.erase(0, 1);
+
+		const bool detrimental =
+			magnitude > 0.0f;
+
+		const auto jsonAV =
+			settings->JSONSettings
+				["Magic Effects"]
+				["Actor Values"]
+				[detrimental ? "Damage" : "Recovery"]
+				[avName];
+
+		if (jsonAV == nullptr) {
+			continue;
+		}
+
+		float poiseDamage =
+			static_cast<float>(jsonAV) *
+			magnitude;
+
+		if (poiseDamage <= 0.0f) {
+			continue;
+		}
+
+		// ====================================================
+		// Attacker perk modifiers
+		// ====================================================
+
+		float baseMult = 1.0f;
+
+		PoiseAV::ApplyPerkEntryPoint(
+			34,
+			a_actor->As<RE::Character>(),
+			a_actor->As<RE::Character>(),
+			&baseMult);
+
+		poiseDamage *= baseMult;
+
+		// ====================================================
+		// Attacker damage multiplier
+		// ====================================================
+
+		poiseDamage *=
+			settings->GetDamageMultiplier(
+				a_actor,
+				a_actor);
+
+		// ====================================================
+		// Magic damage multiplier
+		// ====================================================
+
+		poiseDamage *=
+			settings->Magic.DamageMult;
+
+		// ====================================================
+		// Magic scaling
+		// ====================================================
+
+		if (poiseDamage > 25.0f) {
+			const float excess =
+				poiseDamage - 25.0f;
+
+			poiseDamage =
+				25.0f +
+				(excess /
+					(1.0f +
+						(excess / 100.0f)));
+		}
+
+		totalDamage += poiseDamage;
+
+		if (settings->Debug.LogMagicEffectCalcs) {
+			logger::info(
+				"[Staff Magic Damage] Actor={} Staff={} "
+				"AV={} Magnitude={} "
+				"EffectDamage={} Total={}",
+				a_actor->GetName(),
+				a_staff->GetName(),
+				avName,
+				magnitude,
+				poiseDamage,
+				totalDamage);
+		}
+	}
+
+	return std::clamp(
+		totalDamage,
+		0.0f,
+		200.0f);
+}
+
 bool HitEventHandler::IsCreature(RE::Actor* actor)
 {
 	if (!actor) {
@@ -675,46 +801,43 @@ bool HitEventHandler::IsCreature(RE::Actor* actor)
 		return false;
 	}
 
-	// Static Lookups (initialized once)
 	static auto creatureKeyword =
-		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13795);
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13795);  // ActorTypeCreature
 
 	static auto animalKeyword =
-		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13798);
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13798);  // ActorTypeAnimal
 
 	static auto dwarvenKeyword =
-		RE::TESForm::LookupByID<RE::BGSKeyword>(0x1397A);
-
-	static auto humanoidKeyword =
-		RE::TESForm::LookupByID<RE::BGSKeyword>(0x13794);
+		RE::TESForm::LookupByID<RE::BGSKeyword>(0x1397A);  // ActorTypeDwarven
 
 	bool hasCreature =
-		creatureKeyword && race->HasKeyword(creatureKeyword);
+		creatureKeyword &&
+		race->HasKeyword(creatureKeyword);
 
 	bool hasAnimal =
-		animalKeyword && race->HasKeyword(animalKeyword);
+		animalKeyword &&
+		race->HasKeyword(animalKeyword);
 
 	bool hasDwarven =
-		dwarvenKeyword && race->HasKeyword(dwarvenKeyword);
-
-	bool hasHumanoid =
-		humanoidKeyword && race->HasKeyword(humanoidKeyword);
+		dwarvenKeyword &&
+		race->HasKeyword(dwarvenKeyword);
 
 	bool result =
-		(hasCreature || hasAnimal || hasDwarven) && !hasHumanoid;
+		hasCreature ||
+		hasAnimal ||
+		hasDwarven;
 
 	auto settings = Settings::GetSingleton();
 
 	if (settings->Debug.LogWeaponCalcs && result) {
 		logger::info(
 			FMT_STRING(
-				"[IsCreature] Actor={} Race={} Creature={} Animal={} Dwarven={} Humanoid={} Result={}"),
+				"[IsCreature] Actor={} Race={} Creature={} Animal={} Dwarven={} Result={}"),
 			actor->GetName(),
 			race->GetFormEditorID(),
 			hasCreature,
 			hasAnimal,
 			hasDwarven,
-			hasHumanoid,
 			result);
 	}
 
@@ -812,19 +935,63 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 		return stagger;
 	}
 
+	// Armor effectiveness multiplier.
+	// 1.0 = normal armor value
+	// 0.8 = armor is 20% weaker
+	// 1.2 = armor is 20% stronger
+	float armorEffectiveness = settings->Armor.ArmorMult;
+
 	// Normalize armor against the reference point.
 	float armorRatio =
 		std::clamp(
-			totalArmor / maxArmor,
+			(totalArmor * armorEffectiveness) / maxArmor,
+			0.0f,
+			1.0f);
+
+	// Calculate the total weight of currently worn armor.
+	float totalArmorWeight = 0.0f;
+
+	auto inventory = target->GetInventory();
+
+	for (const auto& [item, entry] : inventory) {
+		if (!item || !entry.second) {
+			continue;
+		}
+
+		auto armor = item->As<RE::TESObjectARMO>();
+		if (!armor) {
+			continue;
+		}
+
+		if (!entry.second->IsWorn()) {
+			continue;
+		}
+
+		totalArmorWeight += entry.second->GetWeight();
+	}
+
+	// Add armor weight as a flat contribution to the normalized
+	// armor factor, just like weapon weight contributes to poise.
+	float weightContrib = settings->Armor.WeightContribution;
+
+	float weightFactor =
+		totalArmorWeight * weightContrib;
+
+	// Combine armor rating and weight before applying
+	// the hyperbolic scaling curve.
+	float baseArmorFactor =
+		std::clamp(
+			armorRatio + weightFactor,
 			0.0f,
 			1.0f);
 
 	// Hyperbolic scaling curve.
 	float curveStrength = settings->Global.ArmorScalingCurve;
 
-	float r1 = armorRatio * curveStrength;
+	float r1 = baseArmorFactor * curveStrength;
 
-	float armorReduction = r1 / (1.0f + r1);
+	float armorReduction =
+		r1 / (1.0f + r1) * 0.6;
 
 	// Convert reduction into damage multiplier.
 	float armorMultiplier =
@@ -840,11 +1007,18 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
 			FMT_STRING(
-				"[Armor Calc] Target={} Armor={} Ratio={} MaxArmor={} "
-				"Curve={} Reduction={} FinalMult={} Before={} After={}"),
+				"[Armor Calc] Target={} Armor={} ArmorEffectiveness={} "
+				"ArmorRatio={} ArmorWeight={} WeightContrib={} "
+				"WeightFactor={} BaseFactor={} MaxArmor={} Curve={} "
+				"Reduction={} FinalMult={} Before={} After={}"),
 			target->GetName(),
 			totalArmor,
+			armorEffectiveness,
 			armorRatio,
+			totalArmorWeight,
+			weightContrib,
+			weightFactor,
+			baseArmorFactor,
 			maxArmor,
 			curveStrength,
 			armorReduction,
@@ -862,24 +1036,34 @@ float HitEventHandler::ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* 
 		return stagger;
 	}
 
-	auto  settings = Settings::GetSingleton();
-	float blockMult = 1.0f;
+	auto settings = Settings::GetSingleton();
 
-	if (hitData->flags.any(RE::HitData::Flag::kPowerAttack)) {
-		// Power attacks partially ignore blocks, but still receive 25% reduction
-		blockMult = 0.75f;
-	} else {
-		// Normal attacks scale with block percentage
-		blockMult = 1.0f - hitData->percentBlocked;
+	float blockAmount = hitData->percentBlocked;
+
+	// Power attacks use a separate blocking multiplier.
+	bool isPowerAttack =
+		hitData->flags.any(RE::HitData::Flag::kPowerAttack);
+
+	if (isPowerAttack) {
+		blockAmount *= settings->Blocking.PowerAttackBlockingMult;
 	}
+
+	float blockMult =
+		1.0f - (blockAmount * settings->Blocking.BlockingMult);
+
+	blockMult = std::clamp(blockMult, 0.0f, 1.0f);
 
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
 			FMT_STRING(
-				"Block Calc: PercentBlocked={} PowerAttack={} BlockMult={} "
-				"StaggerBefore={} StaggerAfter={}"),
+				"Block Calc: PercentBlocked={} PowerAttack={} "
+				"EffectiveBlock={} BlockingMult={} PowerAttackBlockingMult={} "
+				"FinalMult={} Before={} After={}"),
 			hitData->percentBlocked,
-			hitData->flags.any(RE::HitData::Flag::kPowerAttack),
+			isPowerAttack,
+			blockAmount,
+			settings->Blocking.BlockingMult,
+			settings->Blocking.PowerAttackBlockingMult,
 			blockMult,
 			stagger,
 			stagger * blockMult);
@@ -922,7 +1106,6 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 			aggressor,
 			projectile);
 	}
-
 	// ==========================
 	// Weapon / Unarmed Attacks
 	// ==========================
@@ -949,6 +1132,118 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 			}
 		}
 	}
+	// ==========================
+	// Creature Attacks
+	// ==========================
+	else if (isCreature) {
+		float baseStagger = 0.0f;
+
+		RE::TESRace* race = aggressor->GetRace();
+
+		float attackMult = 1.0f;
+
+		// ==========================
+		// Base Creature Damage
+		// ==========================
+
+		float unarmedDamage = 0.0f;
+
+		if (race) {
+			unarmedDamage = race->data.unarmedDamage;
+		}
+
+		// Clamp raw unarmed damage before weight scaling
+		unarmedDamage =
+			std::clamp(
+				unarmedDamage,
+				20.0f,
+				50.0f);
+
+		// Find attack-specific damage multiplier from ATKD
+		if (hitData->attackData) {
+			attackMult = hitData->attackData->data.damageMult;
+		}
+
+		// ==========================
+		// Creature Weight Scaling
+		// ==========================
+
+		float creatureWeight = 1.0f;
+
+		if (race) {
+			auto it = settings->RaceWeightCache.find(
+				race->GetFormEditorID());
+
+			if (it != settings->RaceWeightCache.end()) {
+				creatureWeight = it->second;
+			}
+		}
+
+		// Normalize creature weight:
+		// 0.5 = minimum (1.0x)
+		// 4.0 = maximum (2.0x)
+		float normalizedWeight =
+			std::clamp(
+				(creatureWeight - 0.5f) / (4.0f - 0.5f),
+				0.0f,
+				1.0f);
+
+		// Apply weight scaling curve
+		float curvedWeight =
+			std::pow(
+				normalizedWeight,
+				settings->Creature.ScalingCurve);
+
+		// Convert normalized weight into damage multiplier
+		float creatureMultiplier =
+			std::lerp(
+				1.0f,
+				2.5f,
+				curvedWeight);
+
+		// Apply creature weight to base unarmed damage
+		baseStagger =
+			unarmedDamage *
+			creatureMultiplier;
+
+		// Clamp weighted base stagger before attack multiplier
+		baseStagger =
+			std::clamp(
+				baseStagger,
+				20.0f,
+				80.0f);
+
+		// Apply attack-specific multiplier AFTER the clamp
+		baseStagger *= attackMult;
+
+		// Apply global creature damage multiplier
+		stagger =
+			baseStagger *
+			settings->Creature.DamageMultiplier;
+
+		if (settings->Debug.LogWeaponCalcs) {
+			logger::info(
+				FMT_STRING(
+					"[Creature Calc] "
+					"Aggressor={} Race={} "
+					"UnarmedDamage={} AttackMult={} "
+					"Weight={} Normalized={} "
+					"Curve={} CreatureMult={} "
+					"ClampedBase={} DamageMult={} Final={}"),
+				aggressor->GetName(),
+				race ? race->GetName() : "NULL",
+				unarmedDamage,
+				attackMult,
+				creatureWeight,
+				normalizedWeight,
+				settings->Creature.ScalingCurve,
+				creatureMultiplier,
+				baseStagger,
+				settings->Creature.DamageMultiplier,
+				stagger);
+		}
+	}
+
 	// ==========================
 	// No Skill / Physical Damage
 	// ==========================
@@ -989,81 +1284,7 @@ float HitEventHandler::RecalculateStagger(RE::Actor* target, RE::Actor* aggresso
 					stagger);
 			}
 		}
-		// ==========================
-		// Creature
-		// ==========================
-		else if (isCreature) {
-			RE::TESRace* race = aggressor->GetRace();
 
-			float creatureWeight = 1.0f;
-
-			if (race) {
-				auto it = settings->RaceWeightCache.find(
-					race->GetFormEditorID());
-
-				if (it != settings->RaceWeightCache.end()) {
-					creatureWeight = it->second;
-				}
-			}
-
-			float weightRange =
-				settings->MaxRaceWeight - settings->MinRaceWeight;
-
-			float normalizedWeight = 0.0f;
-
-			if (weightRange > 0.0f) {
-				normalizedWeight = std::clamp(
-					(creatureWeight - settings->MinRaceWeight) / weightRange,
-					0.0f,
-					1.0f);
-			}
-
-			// Weight curve
-			float r1 =
-				normalizedWeight *
-				settings->Creature.ScalingCurve;
-
-			float r2 =
-				r1 /
-				(1.0f + r1);
-
-			float creatureMultiplier =
-				std::lerp(
-					0.25f,
-					3.0f,
-					r2);
-
-			// Minimum creature attack damage before creature scaling
-			float baseDamage =
-				std::max(
-					hitData->physicalDamage,
-					25.0f);
-
-			stagger =
-				baseDamage *
-				creatureMultiplier *
-				settings->Creature.DamageMultiplier;
-
-			logger::info(
-				FMT_STRING(
-					"[Creature Calc] "
-					"Aggressor={} Race={} "
-					"RawDamage={} BaseDamage={} "
-					"Weight={} Normalized={} "
-					"Curve={} R2={} "
-					"CreatureMult={} DamageMult={} Final={}"),
-				aggressor->GetName(),
-				race ? race->GetName() : "NULL",
-				hitData->physicalDamage,
-				baseDamage,
-				creatureWeight,
-				normalizedWeight,
-				settings->Creature.ScalingCurve,
-				r2,
-				creatureMultiplier,
-				settings->Creature.DamageMultiplier,
-				stagger);
-		}
 		// ==========================
 		// Humanoid Unarmed
 		// ==========================
@@ -1187,6 +1408,251 @@ void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 
 	// Disable Skyrim vanilla stagger calculation
 	hitData->stagger = 0;
+}
+
+// API CALLS
+float HitEventHandler::GetHandDamage(RE::Actor* a_actor, bool a_leftHand)
+{
+	if (!a_actor) {
+		return 0.0f;
+	}
+
+	auto* equippedObject =
+		a_actor->GetEquippedObject(a_leftHand);
+
+	// ============================================================
+	// Two-Handed Weapon
+	// ============================================================
+	//
+	// Two-handed weapons occupy both hand slots, so both left
+	// and right hand API requests should return the same damage.
+	//
+	{
+		auto* rightObject =
+			a_actor->GetEquippedObject(false);
+
+		if (auto* weapon = rightObject ?
+		                       rightObject->As<RE::TESObjectWEAP>() :
+		                       nullptr) {
+			const bool isTwoHanded =
+				weapon->IsTwoHandedSword() ||
+				weapon->IsTwoHandedAxe() ||
+				weapon->IsBow() ||
+				weapon->IsCrossbow();
+
+			if (isTwoHanded) {
+				if (weapon->IsHandToHandMelee()) {
+					return GetUnarmedDamage(a_actor);
+				}
+
+				// ====================================================
+				// Bow / Crossbow
+				// ====================================================
+				if (weapon->IsBow() || weapon->IsCrossbow()) {
+					float damage =
+						GetWeaponDamage(weapon);
+
+					auto* ammo =
+						a_actor->GetCurrentAmmo();
+
+					if (ammo) {
+						damage +=
+							ammo->GetRuntimeData().data.damage *
+							Settings::GetSingleton()
+								->Weapon.ArrowDamageMult;
+					}
+
+					return damage;
+				}
+
+				// ====================================================
+				// Normal two-handed weapon
+				// ====================================================
+				return GetWeaponDamage(weapon);
+			}
+		}
+	}
+
+	// ============================================================
+	// No Equipped Object
+	// ============================================================
+	if (!equippedObject) {
+		return GetUnarmedDamage(a_actor);
+	}
+
+	// ============================================================
+	// Weapon
+	// ============================================================
+	if (auto* weapon =
+			equippedObject->As<RE::TESObjectWEAP>()) {
+		if (weapon->IsHandToHandMelee()) {
+			return GetUnarmedDamage(a_actor);
+		}
+		// ============================================================
+		// Staff
+		// ============================================================
+		if (weapon->IsStaff()) {
+			return GetStaffDamage(a_actor, weapon);
+		}
+		// ========================================================
+		// Bow / Crossbow
+		// ========================================================
+		if (weapon->IsBow() || weapon->IsCrossbow()) {
+			float damage =
+				GetWeaponDamage(weapon);
+
+			auto* ammo =
+				a_actor->GetCurrentAmmo();
+
+			if (ammo) {
+				damage +=
+					ammo->GetRuntimeData().data.damage *
+					Settings::GetSingleton()
+						->Weapon.ArrowDamageMult;
+			}
+
+			return damage;
+		}
+
+		return GetWeaponDamage(weapon);
+	}
+
+	// ============================================================
+	// Armor / Shield
+	// ============================================================
+	if (auto* armor =
+			equippedObject->As<RE::TESObjectARMO>()) {
+		if (armor->IsShield()) {
+			return GetShieldDamage(a_actor);
+		}
+
+		return 0.0f;
+	}
+
+	// ============================================================
+	// Spell
+	// ============================================================
+	if (auto* spell =
+			equippedObject->As<RE::SpellItem>()) {
+		auto settings =
+			Settings::GetSingleton();
+
+		float totalDamage = 0.0f;
+
+		for (const auto& effect : spell->effects) {
+			if (!effect || !effect->baseEffect) {
+				continue;
+			}
+
+			const auto actorValue =
+				effect->baseEffect->data.primaryAV;
+
+			const float magnitude =
+				effect->effectItem.magnitude;
+
+			std::string avName{
+				magic_enum::enum_name(actorValue)
+			};
+
+			if (avName.empty()) {
+				continue;
+			}
+
+			// Remove k prefix
+			// kHealth -> Health
+			avName.erase(0, 1);
+
+			const bool detrimental =
+				magnitude > 0.0f;
+
+			const auto jsonAV =
+				settings->JSONSettings
+					["Magic Effects"]
+					["Actor Values"]
+					[detrimental ? "Damage" : "Recovery"]
+					[avName];
+
+			if (jsonAV == nullptr) {
+				continue;
+			}
+
+			float poiseDamage =
+				static_cast<float>(jsonAV) *
+				magnitude;
+
+			if (poiseDamage <= 0.0f) {
+				continue;
+			}
+
+			// ====================================================
+			// Attacker perk modifiers
+			// ====================================================
+
+			float baseMult = 1.0f;
+
+			PoiseAV::ApplyPerkEntryPoint(
+				34,
+				a_actor->As<RE::Character>(),
+				a_actor->As<RE::Character>(),
+				&baseMult);
+
+			poiseDamage *= baseMult;
+
+			// ====================================================
+			// Attacker damage multiplier
+			// ====================================================
+
+			poiseDamage *=
+				settings->GetDamageMultiplier(
+					a_actor,
+					a_actor);
+
+			// ====================================================
+			// Magic damage multiplier
+			// ====================================================
+
+			poiseDamage *=
+				settings->Magic.DamageMult;
+
+			// ====================================================
+			// Magic scaling
+			// ====================================================
+
+			if (poiseDamage > 25.0f) {
+				const float excess =
+					poiseDamage - 25.0f;
+
+				poiseDamage =
+					25.0f +
+					(excess /
+						(1.0f +
+							(excess / 100.0f)));
+			}
+
+			totalDamage += poiseDamage;
+
+			if (settings->Debug.LogMagicEffectCalcs) {
+				logger::info(
+					"[Magic Hand Damage] Actor={} Hand={} "
+					"Spell={} AV={} Magnitude={} "
+					"EffectDamage={} Total={}",
+					a_actor->GetName(),
+					a_leftHand ? "Left" : "Right",
+					spell->GetName(),
+					avName,
+					magnitude,
+					poiseDamage,
+					totalDamage);
+			}
+		}
+
+		return std::clamp(
+			totalDamage,
+			0.0f,
+			200.0f);
+	}
+
+	return 0.0f;
 }
 
 // void HitEventHandler::PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData)

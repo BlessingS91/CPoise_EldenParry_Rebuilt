@@ -26,6 +26,7 @@ public:
 	bool  IsTrapEffect(RE::EffectSetting* a_mgef);
 	bool  IsActorAffectedByTrap(RE::Actor* a_actor);
 	void  DumpTrapEffects();
+	float GetEffectiveMagicResistance(RE::Actor* a_target);
 
 protected:
 	struct Hooks

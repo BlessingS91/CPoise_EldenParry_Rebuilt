@@ -104,9 +104,11 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Health.BaseHealth = getFloatVal("Health", "BaseHealth", "Health Settings", "Base Health", Health.BaseHealth);
 	Health.MassMult = getFloatVal("Health", "MassMult", "Health Settings", "Mass Mult", Health.MassMult);
 	Health.RegenRate = getFloatVal("Health", "RegenRate", "Health Settings", "Regen Rate", Health.RegenRate);
+	Health.RegenDelay = getFloatVal("Health", "RegenDelay", "Health Settings", "Regen Delay", Health.RegenDelay);
 
 	// Armor Calculations
 	Armor.ArmorMult = getFloatVal("Armor", "ArmorMult", "Armor Settings", "Armor Mult", Armor.ArmorMult);
+	Armor.WeightContribution = getFloatVal("Armor", "WeightContribution", "Armor Settings", "Armor Weight Contribution", Armor.WeightContribution);
 
 	// Weapon Damage
 	Weapon.MeleeMult = getFloatVal("Weapon", "MeleeMult", "Damage Settings", "Melee Mult", Weapon.MeleeMult);
@@ -114,6 +116,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	Weapon.BowDrawSpeedMult = getFloatVal("Weapon", "BowDrawSpeedMult", "Damage Settings", "Bow Draw Speed Mult", Weapon.BowDrawSpeedMult);
 	Weapon.ArrowDamageMult = getFloatVal("Weapon", "ArrowDamageMult", "Damage Settings", "Arrow Damage Mult", Weapon.ArrowDamageMult);
 	Weapon.CrossbowMult = getFloatVal("Weapon", "CrossbowMult", "Damage Settings", "Crossbow Mult", Weapon.CrossbowMult);
+	Weapon.BowDamageMult = getFloatVal("Weapon", "BowDamageMult", "Damage Settings", "Bow Damage Mult", Weapon.BowDamageMult);
 
 	// Unarmed Damage
 	Unarmed.ArmorContribution =
@@ -183,6 +186,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// Bash / Blocking
 	Blocking.BashMult = getFloatVal("Blocking", "BashMult", "Damage Settings", "Bash Mult", Blocking.BashMult);
 	Blocking.BlockingMult = getFloatVal("Blocking", "BlockingMult", "General Damage Settings", "Blocking Multiplier", Blocking.BlockingMult);
+	Blocking.PowerAttackBlockingMult = getFloatVal("Blocking", "PowerAttackBlockingMult", "General Damage Settings", "Power Attack Blocking Multiplier", Blocking.PowerAttackBlockingMult);
 
 	// Shield Damage
 	Shield.ArmorContribution =
@@ -214,6 +218,14 @@ void Settings::LoadINI(const wchar_t* a_path)
 			"General Damage Settings",
 			"Magic Resistance Multiplier",
 			Magic.ResistanceMult);
+
+	Magic.DamageMult =
+		getFloatVal(
+			"Magic",
+			"DamageMult",
+			"General Damage Settings",
+			"Magic Damage Multiplier",
+			Magic.DamageMult);
 
 	// Environment / Traps
 	Environment.TrapMult = getFloatVal("Environment", "TrapMult", "Damage", "TrapMult", Environment.TrapMult);
@@ -284,12 +296,13 @@ void Settings::LoadINI(const wchar_t* a_path)
 	// Logging
 	logger::info(FMT_STRING("INI Loaded Successfully:"));
 	logger::info(FMT_STRING("  [Modes] StaggerMode={}"), Modes.StaggerMode);
-	logger::info(FMT_STRING("  [Health] BaseHealth={} MassMult={} RegenRate={}"),
-		Health.BaseHealth, Health.MassMult, Health.RegenRate);
-	logger::info(FMT_STRING("  [Armor] ArmorMult={}"), Armor.ArmorMult);
-	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
+	logger::info(FMT_STRING("  [Health] BaseHealth={} MassMult={} RegenRate={} RegenDelay={}"),
+		Health.BaseHealth, Health.MassMult, Health.RegenRate, Health.RegenDelay);
+	logger::info(FMT_STRING("  [Armor] ArmorMult={} WeightContribution={}"), Armor.ArmorMult, Armor.WeightContribution);
+	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDamageMult={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
 		Weapon.MeleeMult,
 		Weapon.WeightContribution,
+		Weapon.BowDamageMult,
 		Weapon.BowDrawSpeedMult,
 		Weapon.ArrowDamageMult,
 		Weapon.CrossbowMult);
@@ -313,9 +326,10 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	logger::info(
 		FMT_STRING(
-			"  [Blocking] BashMult={} BlockingMult={}"),
+			"  [Blocking] BashMult={} BlockingMult={} PowerAttackBlockingMult={}"),
 		Blocking.BashMult,
-		Blocking.BlockingMult);
+		Blocking.BlockingMult,
+		Blocking.PowerAttackBlockingMult);
 
 	logger::info(
 		FMT_STRING(
@@ -330,6 +344,11 @@ void Settings::LoadINI(const wchar_t* a_path)
 		FMT_STRING(
 			"  [Magic] ResistanceMult={}"),
 		Magic.ResistanceMult);
+
+	logger::info(
+		FMT_STRING(
+			"  [Magic] DamageMult={}"),
+		Magic.DamageMult);
 
 	logger::info(FMT_STRING("  [Environment] TrapMult={}"), Environment.TrapMult);
 

@@ -203,6 +203,13 @@ public:
 	float ApplyBlockingMultiplier(RE::HitData* hitData, RE::Actor* target, float stagger);
 	bool  IsCreature(RE::Actor* actor);
 	void  PreProcessHit(RE::Actor* target, RE::HitData* hitData);
+	float GetDamage(RE::Actor* actor, RE::TESForm* equippedObject);
+	float GetHandDamage(
+		RE::Actor* a_actor,
+		bool       a_leftHand);
+	float GetStaffDamage(
+		RE::Actor*         a_actor,
+		RE::TESObjectWEAP* a_staff);
 
 protected:
 	struct Hooks
@@ -215,12 +222,15 @@ protected:
 				handler->PreProcessHit(target, hitData);
 				func(target, hitData);
 			}
+
 			static inline REL::Relocation<decltype(thunk)> func;
 		};
 
 		static void Install()
 		{
-			stl::write_thunk_call<ProcessHitEvent>(REL::RelocationID(37673, 38627).address() + REL::Relocate(0x3C0, 0x4A8, 0x3C0));  // 1.5.97 140628C20
+			stl::write_thunk_call<ProcessHitEvent>(
+				REL::RelocationID(37673, 38627).address() +
+				REL::Relocate(0x3C0, 0x4A8, 0x3C0));
 		}
 	};
 

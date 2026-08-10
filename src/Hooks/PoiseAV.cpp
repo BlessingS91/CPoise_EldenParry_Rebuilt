@@ -39,6 +39,8 @@ bool PoiseAV::CanDamageActor(RE::Actor* a_actor)
 			break;
 
 		case 1:
+			result = true;
+
 			if (auto actorState = a_actor->AsActorState()) {
 				result = !actorState->actorState2.staggered;
 			}
@@ -74,12 +76,16 @@ float PoiseAV::GetBaseActorValue(RE::Actor* a_actor)
 	float health = settings->Health.BaseHealth;
 	float mass = 1.0f;
 
-	auto raceMass = settings->JSONSettings["Races"][editorID];
+	auto& races = settings->JSONSettings["Races"];
 
-	if (!editorID.empty() && raceMass != nullptr) {
-		mass = static_cast<float>(raceMass);
-	} else {
-		mass = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
+	mass = a_actor->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kMass);
+
+	if (!editorID.empty()) {
+		auto raceIt = races.find(editorID);
+
+		if (raceIt != races.end() && raceIt->is_number()) {
+			mass = raceIt->get<float>();
+		}
 	}
 
 	mass = std::clamp(mass, 0.5f, 10.0f);
@@ -158,7 +164,9 @@ bool PoiseAV::IsActorPerformingAction(RE::Actor* a_actor)
 	// True dual cast
 	if (castDual) {
 		if (leftWard || rightWard) {
-			logger::info("[AoO Check] {} dual casting ward, ignoring action", a_actor->GetName());
+			if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
+				logger::info("[AoO Check] {} dual casting ward, ignoring action", a_actor->GetName());
+			}
 			return false;
 		}
 
@@ -167,12 +175,16 @@ bool PoiseAV::IsActorPerformingAction(RE::Actor* a_actor)
 
 	// Independent left/right casting
 	if (castLeft && leftWard) {
-		logger::info("[AoO Check] {} left ward casting, ignoring action", a_actor->GetName());
+		if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
+			logger::info("[AoO Check] {} left ward casting, ignoring action", a_actor->GetName());
+		}
 		return false;
 	}
 
 	if (castRight && rightWard) {
-		logger::info("[AoO Check] {} right ward casting, ignoring action", a_actor->GetName());
+		if (Settings::GetSingleton()->Debug.LogStaggerCalcs) {
+			logger::info("[AoO Check] {} right ward casting, ignoring action", a_actor->GetName());
+		}
 		return false;
 	}
 
@@ -351,7 +363,9 @@ float PoiseAV::ApplyLevelDifferenceScaling(RE::Actor* a_target, RE::Actor* a_agg
 
 	a_poiseDamage *= levelMult;
 
-	if (settings->Debug.LogStaggerCalcs) {
+	if (settings->Debug.LogStaggerCalcs &&
+		beforeDamage > 1.0f &&
+		std::abs(levelMult - 1.0f) > 0.001f) {
 		logger::info(
 			FMT_STRING("[Level Scaling] Attacker={} Level={} Target={} Level={} Difference={} Mult={} Before={} After={}"),
 			a_aggressor->GetName(),
@@ -577,16 +591,6 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			a_target->As<RE::Character>(),
 			&incomingMult);
 
-		if (settings->Debug.LogStaggerCalcs) {
-			logger::info(
-				FMT_STRING(
-					"[Vanilla Perk Incoming] "
-					"Aggressor={} Target={} Mult={}"),
-				a_aggressor->GetName(),
-				a_target->GetName(),
-				incomingMult);
-		}
-
 		// Detailed perk enumeration only
 		if (settings->Debug.LogPerkCalcs) {
 			logStaggerPerks(
@@ -602,19 +606,10 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 			a_aggressor->As<RE::Character>(),
 			&targetMult);
 
-		if (settings->Debug.LogStaggerCalcs) {
-			logger::info(
-				FMT_STRING(
-					"[Vanilla Perk Target] "
-					"Target={} Aggressor={} Mult={}"),
-				a_target->GetName(),
-				a_aggressor->GetName(),
-				targetMult);
-		}
-
 		float vanillaStaggerMult = incomingMult * targetMult;
 
-		if (settings->Debug.LogStaggerCalcs) {
+		if (settings->Debug.LogPerkCalcs &&
+			std::abs(vanillaStaggerMult - 1.0f) > 0.001f) {
 			logger::info(
 				FMT_STRING(
 					"[Vanilla Perk Final] "
@@ -649,6 +644,10 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	{
 		std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 		avManager->DamageActorValue(g_avName, a_target, a_poiseDamage);
+	}
+
+	if (a_poiseDamage > 0.0f) {
+		regenDelays[a_target->GetFormID()] = settings->Health.RegenDelay;
 	}
 
 	float poise;
@@ -760,7 +759,19 @@ void PoiseAV::Update(RE::Actor* a_actor, float a_delta)
 			}
 		}
 	} else {
-		// Delta-time scaled regen point calculation
+		auto formID = a_actor->GetFormID();
+
+		auto it = regenDelays.find(formID);
+		if (it != regenDelays.end()) {
+			it->second -= a_delta;
+
+			if (it->second > 0.0f) {
+				return;
+			}
+
+			regenDelays.erase(it);
+		}
+
 		float maxPoise;
 		{
 			std::lock_guard<std::shared_mutex> lk(avManager->mtx);
@@ -778,25 +789,52 @@ void PoiseAV::Update(RE::Actor* a_actor, float a_delta)
 
 void PoiseAV::GarbageCollection()
 {
-	auto                               avManager = AVManager::GetSingleton();
+	auto*                              avManager = AVManager::GetSingleton();
 	std::lock_guard<std::shared_mutex> lk(avManager->mtx);
 
-	json temporaryJson = avManager->avStorage;
-	for (auto& el : avManager->avStorage.items()) {
-		std::string sformID = el.key();
+	for (auto it = avManager->avStorage.begin(); it != avManager->avStorage.end();) {
 		try {
-			if (auto form = RE::TESForm::LookupByID(static_cast<RE::FormID>(std::stoul(sformID)))) {
-				if (auto actor = form->As<RE::Actor>()) {
-					if (actor->GetActorRuntimeData().currentProcess && actor->GetActorRuntimeData().currentProcess->InHighProcess() && actor->Is3DLoaded())
-						continue;
+			auto  formID = static_cast<RE::FormID>(std::stoul(it.key()));
+			auto* form = RE::TESForm::LookupByID(formID);
+			auto* actor = form ? form->As<RE::Actor>() : nullptr;
+
+			if (actor) {
+				auto& runtime = actor->GetActorRuntimeData();
+
+				if (runtime.currentProcess &&
+					runtime.currentProcess->InHighProcess() &&
+					actor->Is3DLoaded()) {
+					++it;
+					continue;
 				}
 			}
-			temporaryJson.erase(sformID);
-		} catch (std::invalid_argument const&) {
-			logger::error("Bad input: std::invalid_argument thrown");
-		} catch (std::out_of_range const&) {
-			logger::error("Integer overflow: std::out_of_range thrown");
+
+			it = avManager->avStorage.erase(it);
+		} catch (const std::invalid_argument&) {
+			logger::error("Bad input: invalid FormID in AV storage");
+			it = avManager->avStorage.erase(it);
+		} catch (const std::out_of_range&) {
+			logger::error("FormID out of range in AV storage");
+			it = avManager->avStorage.erase(it);
 		}
 	}
-	avManager->avStorage = temporaryJson;
+
+	// Clean stale poise regeneration delay entries.
+	for (auto it = regenDelays.begin(); it != regenDelays.end();) {
+		auto* form = RE::TESForm::LookupByID(it->first);
+		auto* actor = form ? form->As<RE::Actor>() : nullptr;
+
+		if (actor) {
+			auto& runtime = actor->GetActorRuntimeData();
+
+			if (runtime.currentProcess &&
+				runtime.currentProcess->InHighProcess() &&
+				actor->Is3DLoaded()) {
+				++it;
+				continue;
+			}
+		}
+
+		it = regenDelays.erase(it);
+	}
 }

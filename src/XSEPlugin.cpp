@@ -27,7 +27,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 			auto settings = Settings::GetSingleton();
 			settings->LoadSettings();
 
-			ActiveEffectHandler::GetSingleton()->DumpTrapEffects();
+			//ActiveEffectHandler::GetSingleton()->DumpTrapEffects();
 
 			EldenParry::GetSingleton()->init();
 			animEventHandler::Register(true, EldenSettings::bEnableNPCParry);

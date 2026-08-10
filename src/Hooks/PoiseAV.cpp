@@ -479,6 +479,10 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 		return;
 	}
 
+	if (!CanDamageActor(a_target)) {
+		return;
+	}
+
 	auto settings = Settings::GetSingleton();
 	auto avManager = AVManager::GetSingleton();
 
@@ -736,15 +740,9 @@ void PoiseAV::Update(RE::Actor* a_actor, float a_delta)
 		auto actorState = a_actor->AsActorState();
 
 		if (actorState && actorState->actorState2.staggered) {
-			float maxPoise;
 			{
 				std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-				maxPoise = avManager->GetActorValueMax(g_avName, a_actor);
-			}
-
-			{
-				std::lock_guard<std::shared_mutex> lk(avManager->mtx);
-				avManager->RestoreActorValue(g_avName, a_actor, maxPoise);
+				avManager->RestoreActorValueToMax(g_avName, a_actor);
 			}
 
 			if (PoiseAVHUD::trueHUDInterface && settings->TrueHUD.SpecialBar) {

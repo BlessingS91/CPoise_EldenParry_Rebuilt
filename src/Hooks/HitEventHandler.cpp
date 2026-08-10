@@ -63,6 +63,16 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 		0.0f,
 		1.0f);
 
+	// Controls how strongly each point of weapon damage
+	// contributes to the weapon's poise value.
+	float damageContribution =
+		settings->Weapon.DamageContribution;
+
+	normalizedDamage *= damageContribution;
+
+	normalizedDamage =
+		std::clamp(normalizedDamage, 0.0f, 1.0f);
+
 	float r1 = normalizedDamage * settings->Global.WeaponScalingCurve;
 
 	float r2 = r1 / (1.0f + r1);
@@ -89,8 +99,8 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 			FMT_STRING(
 				"[Weapon Poise] Weapon={} Type={} Damage={} Weight={} "
 				"MinDamage={} MaxDamage={} Normalized={} "
-				"CurveFactor={} WeightFactor={} BaseFactor={} "
-				"WeaponMult={} Final={}"),
+				"DamageContribution={} CurveFactor={} WeightFactor={} "
+				"BaseFactor={} WeaponMult={} Final={}"),
 			a_weapon->GetName(),
 			weaponType,
 			currentDamage,
@@ -98,6 +108,7 @@ float HitEventHandler::GetWeaponDamage(RE::TESObjectWEAP* a_weapon, bool ignoreW
 			minDamage,
 			maxDamage,
 			normalizedDamage,
+			damageContribution,
 			r2,
 			a_weapon->weight * weightContrib,
 			basePoiseFactor,
@@ -196,11 +207,12 @@ float HitEventHandler::CalculateProjectileStagger(RE::Actor* aggressor, RE::Proj
 
 	if (settings->Debug.LogWeaponCalcs) {
 		logger::info(
-			"[Projectile Calc] Weapon={} Type={} Ammo={} "
-			"WeaponDamage={:.2f} WeaponFactor={:.2f} "
-			"DrawFactor={:.3f} ArrowDamage={:.2f} "
-			"ArrowMult={:.3f} ArrowContribution={:.2f} "
-			"BowBonus={:.2f} Final={:.2f}",
+			FMT_STRING(
+				"[Projectile Calc] Weapon={} Type={} Ammo={} "
+				"WeaponDamage={:.2f} WeaponFactor={:.2f} "
+				"DrawFactor={:.3f} ArrowDamage={:.2f} "
+				"ArrowMult={:.3f} ArrowContribution={:.2f} "
+				"BowBonus={:.2f} Final={:.2f}"),
 			data.weaponSource->GetName(),
 			isCrossbow ? "Crossbow" : "Bow",
 			data.ammoSource ? data.ammoSource->GetName() : "NULL",

@@ -112,6 +112,7 @@ void Settings::LoadINI(const wchar_t* a_path)
 
 	// Weapon Damage
 	Weapon.MeleeMult = getFloatVal("Weapon", "MeleeMult", "Damage Settings", "Melee Mult", Weapon.MeleeMult);
+	Weapon.DamageContribution = getFloatVal("Weapon", "DamageContribution", "Damage Settings", "Damage Contribution", Weapon.DamageContribution);
 	Weapon.WeightContribution = getFloatVal("Weapon", "WeightContribution", "General Damage Settings", "Weight Contribution", Weapon.WeightContribution);
 	Weapon.BowDrawSpeedMult = getFloatVal("Weapon", "BowDrawSpeedMult", "Damage Settings", "Bow Draw Speed Mult", Weapon.BowDrawSpeedMult);
 	Weapon.ArrowDamageMult = getFloatVal("Weapon", "ArrowDamageMult", "Damage Settings", "Arrow Damage Mult", Weapon.ArrowDamageMult);
@@ -299,8 +300,13 @@ void Settings::LoadINI(const wchar_t* a_path)
 	logger::info(FMT_STRING("  [Health] BaseHealth={} MassMult={} RegenRate={} RegenDelay={}"),
 		Health.BaseHealth, Health.MassMult, Health.RegenRate, Health.RegenDelay);
 	logger::info(FMT_STRING("  [Armor] ArmorMult={} WeightContribution={}"), Armor.ArmorMult, Armor.WeightContribution);
-	logger::info(FMT_STRING("  [Weapon] MeleeMult={} WeightContribution={} BowDamageMult={} BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
+	logger::info(
+		FMT_STRING(
+			"  [Weapon] MeleeMult={} DamageContribution={} "
+			"WeightContribution={} BowDamageMult={} "
+			"BowDrawSpeedMult={} ArrowDamageMult={} CrossbowMult={}"),
 		Weapon.MeleeMult,
+		Weapon.DamageContribution,
 		Weapon.WeightContribution,
 		Weapon.BowDamageMult,
 		Weapon.BowDrawSpeedMult,

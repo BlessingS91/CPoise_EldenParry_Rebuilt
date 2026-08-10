@@ -7,7 +7,6 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-
 class AVManager : public RE::BSTEventSink<RE::TESFormDeleteEvent>
 {
 public:
@@ -30,10 +29,14 @@ public:
 	float GetBaseActorValue(std::string a_actorValue, RE::Actor* a_actor);
 	float GetActorValueMax(std::string a_actorValue, RE::Actor* a_actor);
 	void  DamageActorValue(std::string a_actorValue, RE::Actor* a_actor, float a_damage);
-	void  RestoreActorValue(std::string a_actorValue, RE::Actor* a_actor, float a_restore)
-	{
-		DamageActorValue(a_actorValue, a_actor, -a_restore);
-	}
+	void  RestoreActorValue(
+		std::string a_actorValue,
+		RE::Actor*  a_actor,
+		float       a_restore);
+
+	void RestoreActorValueToMax(
+		std::string a_actorValue,
+		RE::Actor*  a_actor);
 	float GetActorValue(std::string a_actorValue, RE::Actor* a_actor);
 	float GetActorValuePercentage(std::string a_actorValue, RE::Actor* a_actor);
 

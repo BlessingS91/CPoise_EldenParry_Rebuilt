@@ -27,6 +27,17 @@ public:
 	bool  IsActorAffectedByTrap(RE::Actor* a_actor);
 	void  DumpTrapEffects();
 	float GetEffectiveMagicResistance(RE::Actor* a_target);
+	float GetBladeAndBluntMagicResistance(RE::Actor* a_target);
+
+	void SetBladeAndBluntInstalled(bool a_installed)
+	{
+		_bladeAndBluntInstalled = a_installed;
+	}
+
+	bool IsBladeAndBluntInstalled() const
+	{
+		return _bladeAndBluntInstalled;
+	}
 
 protected:
 	struct Hooks
@@ -83,4 +94,6 @@ private:
 
 	ActiveEffectHandler& operator=(const ActiveEffectHandler&) = delete;
 	ActiveEffectHandler& operator=(ActiveEffectHandler&&) = delete;
+
+	bool _bladeAndBluntInstalled = false;
 };

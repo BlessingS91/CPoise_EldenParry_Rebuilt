@@ -27,10 +27,41 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 			auto settings = Settings::GetSingleton();
 			settings->LoadSettings();
 
+			// ============================================================
+			// Blade & Blunt Compatibility
+			// ============================================================
+
+			auto* dataHandler = RE::TESDataHandler::GetSingleton();
+
+			bool bladeAndBluntInstalled =
+				dataHandler &&
+				dataHandler->LookupModByName("BladeAndBlunt.esp") != nullptr;
+
+			ActiveEffectHandler::GetSingleton()->SetBladeAndBluntInstalled(
+				bladeAndBluntInstalled);
+
+			if (bladeAndBluntInstalled) {
+				logger::info(
+					"Blade & Blunt detected. Blade & Blunt armor magic resistance enabled.");
+			} else {
+				logger::info(
+					"Blade & Blunt not detected. Blade & Blunt armor magic resistance disabled.");
+			}
+
+			// ============================================================
+
 			//ActiveEffectHandler::GetSingleton()->DumpTrapEffects();
 
 			EldenParry::GetSingleton()->init();
-			animEventHandler::Register(true, EldenSettings::bEnableNPCParry);
+
+			if (EldenParry::GetSingleton()->IsAvailable()) {
+				EldenHooks::install();
+				logger::info("EldenParry.dll found. Elden Parry features enabled.");
+				animEventHandler::Register(true, EldenSettings::bEnableNPCParry);
+			} else {
+				logger::info("EldenParry.dll not found. Elden Parry features disabled.");
+			}
+
 			break;
 		}
 
@@ -85,7 +116,6 @@ void onSKSEInit()
 	Events::Register();
 	ActorCache::RegisterEvents();
 	EldenSettings::readSettings();
-	EldenHooks::install();
 
 	// Verify if Milf::GetSingleton()->Load() depends on game data
 	// that isn't loaded yet. If so, move it to the kDataLoaded event instead.
@@ -123,11 +153,11 @@ EXTERN_C [[maybe_unused]] __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(con
 {
 	// Remove or comment out this block:
 	/*
-    #ifndef NDEBUG
-        while (!IsDebuggerPresent()) {
-        };
-    #endif
-    */
+		#ifndef NDEBUG
+			while (!IsDebuggerPresent()) {
+			};
+		#endif
+		*/
 
 	InitializeLog();
 

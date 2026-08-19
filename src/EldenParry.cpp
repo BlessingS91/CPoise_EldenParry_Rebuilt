@@ -3,11 +3,17 @@
 #include "Hooks/PoiseAV.h"
 #include "Settings.h"
 #include "Utils.hpp"
+#include <Windows.h>
 using uniqueLocker = std::unique_lock<std::shared_mutex>;
 using sharedLocker = std::shared_lock<std::shared_mutex>;
 
 void EldenParry::init()
 {
+	_isAvailable = GetModuleHandleW(L"EldenParry.dll") != nullptr;
+
+	if (!_isAvailable) {
+		return;
+	}
 	logger::info("Obtaining precision API...");
 	_precision_API = reinterpret_cast<PRECISION_API::IVPrecision1*>(PRECISION_API::RequestPluginAPI());
 	if (_precision_API) {

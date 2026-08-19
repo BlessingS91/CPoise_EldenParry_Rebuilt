@@ -222,28 +222,9 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(
 	}
 
 	auto settings = Settings::GetSingleton();
-	auto avOwner = a_target->AsActorValueOwner();
 
-	const float magicResist =
-		avOwner->GetActorValue(RE::ActorValue::kResistMagic);
-
-	const float fireResist =
-		avOwner->GetActorValue(RE::ActorValue::kResistFire);
-
-	const float frostResist =
-		avOwner->GetActorValue(RE::ActorValue::kResistFrost);
-
-	const float shockResist =
-		avOwner->GetActorValue(RE::ActorValue::kResistShock);
-
-	const float elementalAverage =
-		(fireResist + frostResist + shockResist) / 3.0f;
-
-	const float effectiveResist = std::clamp(
-		(magicResist * 0.65f) +
-			(elementalAverage * 0.35f),
-		-100.0f,
-		100.0f);
+	const float effectiveResist =
+		GetEffectiveMagicResistance(a_target);
 
 	float finalMult = 1.0f;
 	float reduction = 0.0f;
@@ -278,12 +259,8 @@ float ActiveEffectHandler::ApplyMagicPoiseResistance(
 	if (settings->Debug.LogMagicEffectCalcs &&
 		a_damage >= 1.0f) {
 		logger::info(
-			"[Magic Poise Resist] Target={} Magic={} Fire={} Frost={} Shock={} Effective={} Reduction={} Mult={} Before={} After={}",
+			"[Magic Poise Resist] Target={} Effective={} Reduction={} Mult={} Before={} After={}",
 			a_target->GetName(),
-			magicResist,
-			fireResist,
-			frostResist,
-			shockResist,
 			effectiveResist,
 			reduction,
 			finalMult,
@@ -318,13 +295,60 @@ float ActiveEffectHandler::GetEffectiveMagicResistance(RE::Actor* a_target)
 	const float elementalAverage =
 		(fireResist + frostResist + shockResist) / 3.0f;
 
-	return std::clamp(
+	float effectiveResist =
 		(magicResist * 0.65f) +
-			(elementalAverage * 0.35f),
+		(elementalAverage * 0.35f);
+
+	if (_bladeAndBluntInstalled) {
+		effectiveResist +=
+			GetBladeAndBluntMagicResistance(a_target) * 100.0f;
+	}
+
+	return std::clamp(
+		effectiveResist,
 		-100.0f,
 		100.0f);
 }
 
+float ActiveEffectHandler::GetBladeAndBluntMagicResistance(RE::Actor* a_target)
+{
+	if (!a_target) {
+		return 0.0f;
+	}
+
+	float armor =
+		max(
+			0.0f,
+			static_cast<float>(
+				a_target->GetActorRuntimeData().armorRating));
+
+	float armorMagicResistance = 0.0f;
+
+	// Blade & Blunt:
+	// 0-500 AR:
+	//     0.05% spell resistance per point
+	//     25% at 500 AR
+	//
+	// 500-1000 AR:
+	//     0.03% spell resistance per point
+	//     40% at 1000 AR
+	//
+	// 1000+ AR:
+	//     capped at 40%
+	if (armor <= 500.0f) {
+		armorMagicResistance =
+			armor * 0.0005f;
+	} else {
+		armorMagicResistance =
+			0.25f +
+			((armor - 500.0f) * 0.0003f);
+	}
+
+	return std::clamp(
+		armorMagicResistance,
+		0.0f,
+		0.40f);
+}
 //Unused Trap stuff
 // bool ActiveEffectHandler::IsTrapEffect(RE::EffectSetting* a_mgef)
 // {

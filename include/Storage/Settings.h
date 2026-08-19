@@ -86,6 +86,7 @@ public:
 		float MeleeMult{ 1.0f };
 
 		float DamageContribution{ 1.0f };
+
 		float WeightContribution{ 0.005f };
 
 		float BowDrawSpeedMult{ 1.0f };

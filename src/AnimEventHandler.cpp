@@ -1,6 +1,7 @@
 #include "AnimEventHandler.h"
 #include "EldenParry.h"
 #include "Settings.h"
+
 constexpr uint32_t hash(const char* data, size_t const size) noexcept
 {
 	uint32_t hash = 5381;
@@ -20,6 +21,14 @@ constexpr uint32_t operator"" _h(const char* str, size_t size) noexcept
 RE::BSEventNotifyControl animEventHandler::HookedProcessEvent(RE::BSAnimationGraphEvent& a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>* src)
 {
 	FnProcessEvent fn = fnHash.at(*(uint64_t*)this);
+
+	// Elden Parry is an optional dependency.
+	auto* EP = EldenParry::GetSingleton();
+
+	if (!EP->IsAvailable()) {
+		return fn ? (this->*fn)(a_event, src) : RE::BSEventNotifyControl::kContinue;
+	}
+
 	//RE::ConsoleLog::GetSingleton()->Print(a_event.tag.c_str());
 	if (!a_event.holder) {
 		return fn ? (this->*fn)(a_event, src) : RE::BSEventNotifyControl::kContinue;
@@ -32,7 +41,6 @@ RE::BSEventNotifyControl animEventHandler::HookedProcessEvent(RE::BSAnimationGra
 		}
 		break;
 	case "bashStop"_h:
-		auto EP = EldenParry::GetSingleton();
 		if (EldenSettings::bSuccessfulParryNoCost) {
 			EP->applyParryCost((RE::Actor*)a_event.holder);
 		}

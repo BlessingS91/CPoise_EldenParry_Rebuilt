@@ -23,11 +23,9 @@ public:
 	float CalculateEffectMultiplier(RE::ActorValue a_actorValue, bool a_detrimental);
 	void  ProcessValueModifier(RE::Actor* a_target, RE::ActorValue a_actorValue, float a_magnitudeDelta, RE::Actor* a_caster);
 	float ApplyMagicPoiseResistance(RE::Actor* a_target, float a_damage);
-	bool  IsTrapEffect(RE::EffectSetting* a_mgef);
-	bool  IsActorAffectedByTrap(RE::Actor* a_actor);
-	void  DumpTrapEffects();
 	float GetEffectiveMagicResistance(RE::Actor* a_target);
 	float GetBladeAndBluntMagicResistance(RE::Actor* a_target);
+	bool  IsIgnoredMagicEffect(RE::EffectSetting* a_mgef);
 
 	void SetBladeAndBluntInstalled(bool a_installed)
 	{

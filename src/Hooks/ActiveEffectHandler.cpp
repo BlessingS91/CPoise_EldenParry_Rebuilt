@@ -349,6 +349,52 @@ float ActiveEffectHandler::GetBladeAndBluntMagicResistance(RE::Actor* a_target)
 		0.0f,
 		0.40f);
 }
+
+bool ActiveEffectHandler::IsIgnoredMagicEffect(RE::EffectSetting* a_mgef)
+{
+	if (!a_mgef) {
+		return false;
+	}
+
+	auto* settings = Settings::GetSingleton();
+	if (!settings) {
+		return false;
+	}
+
+	const auto& ignoredKeywords =
+		settings->JSONSettings["Magic Effects"]["Ignored Keywords"];
+
+	if (!ignoredKeywords.is_array()) {
+		return false;
+	}
+
+	for (std::uint32_t i = 0; i < a_mgef->numKeywords; ++i) {
+		auto* keyword = a_mgef->keywords[i];
+		if (!keyword) {
+			continue;
+		}
+
+		const auto keywordID =
+			clib_util::editorID::get_editorID(keyword);
+
+		if (keywordID.empty()) {
+			continue;
+		}
+
+		for (const auto& ignored : ignoredKeywords) {
+			if (!ignored.is_string()) {
+				continue;
+			}
+
+			if (keywordID == ignored.get<std::string>()) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 //Unused Trap stuff
 // bool ActiveEffectHandler::IsTrapEffect(RE::EffectSetting* a_mgef)
 // {

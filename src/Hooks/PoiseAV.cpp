@@ -436,10 +436,7 @@ float PoiseAV::CheckImpact(RE::Actor* a_target, float a_poiseDamage, AVManager* 
 	return poiseDamagePercent;
 }
 
-void PoiseAV::HandlePoiseBreak(
-	RE::Actor* a_target,
-	RE::Actor* a_aggressor,
-	float      a_impactPercent)
+void PoiseAV::HandlePoiseBreak(RE::Actor* a_target, RE::Actor* a_aggressor, float a_impactPercent)
 {
 	if (!a_target) {
 		return;

@@ -930,14 +930,18 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	}
 
 	auto settings = Settings::GetSingleton();
-	auto instance = GetSingleton();
 
 	// ============================================================
-	// Armor Rating
+	// Armor Constants
 	// ============================================================
 
 	constexpr float kArmorCap = 1000.0f;
 	constexpr float kMaxReduction = 0.60f;
+	constexpr float kMaxArmorWeight = 100.0f;
+
+	// ============================================================
+	// Armor Rating
+	// ============================================================
 
 	float totalArmor =
 		(std::max)(0.0f,
@@ -945,23 +949,9 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 				target->GetActorRuntimeData().armorRating));
 
 	// ============================================================
-	// Original Armor Reference System
-	// ============================================================
-	//
-	// Kept here in case the dynamic armor reference system is
-	// wanted again in the future.
-	//
-	// float maxArmor =
-	//     instance->_maxArmorRating *
-	//     settings->Global.EquipmentReferenceMultiplier;
-	//
-	// if (maxArmor <= 0.0f) {
-	//     return stagger;
-	// }
-	//
+	// Armor Effectiveness
 	// ============================================================
 
-	// Armor effectiveness multiplier.
 	float armorEffectiveness =
 		settings->Armor.ArmorMult;
 
@@ -973,51 +963,91 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	// 1000+   = 1.0
 	float armorRatio =
 		std::clamp(
-			(totalArmor * armorEffectiveness) / kArmorCap,
+			(totalArmor * armorEffectiveness) /
+				kArmorCap,
 			0.0f,
 			1.0f);
 
 	// ============================================================
-	// Original Armor Weight System
+	// Armor Weight
 	// ============================================================
 	//
-	// Kept here in case armor weight is wanted as part of the
-	// mitigation calculation again.
+	// Weight acts as a secondary multiplier rather than an
+	// independent source of armor effectiveness.
 	//
-	// float totalArmorWeight = 0.0f;
+	// Weight is capped at 100 total worn armor weight.
 	//
-	// auto inventory = target->GetInventory();
+	// WeightMultiplier =
+	//     1.0 + (CappedArmorWeight * WeightContribution)
 	//
-	// for (const auto& [item, entry] : inventory) {
-	//     if (!item || !entry.second) {
-	//         continue;
-	//     }
+	// With WeightContribution = 0.0025:
 	//
-	//     auto armor = item->As<RE::TESObjectARMO>();
-	//     if (!armor) {
-	//         continue;
-	//     }
-	//
-	//     if (!entry.second->IsWorn()) {
-	//         continue;
-	//     }
-	//
-	//     totalArmorWeight += entry.second->GetWeight();
-	// }
-	//
-	// float weightContrib =
-	//     settings->Armor.WeightContribution;
-	//
-	// float weightFactor =
-	//     totalArmorWeight * weightContrib;
-	//
-	// float baseArmorFactor =
-	//     std::clamp(
-	//         armorRatio + weightFactor,
-	//         0.0f,
-	//         1.0f);
-	//
+	// 0 weight   = 1.00x
+	// 25 weight  = 1.0625x
+	// 50 weight  = 1.125x
+	// 75 weight  = 1.1875x
+	// 100 weight = 1.25x
+	// 100+       = 1.25x
+
+	float totalArmorWeight = 0.0f;
+
+	auto inventory = target->GetInventory();
+
+	for (const auto& [item, entry] : inventory) {
+		if (!item || !entry.second) {
+			continue;
+		}
+
+		auto armor =
+			item->As<RE::TESObjectARMO>();
+
+		if (!armor || !entry.second->IsWorn()) {
+			continue;
+		}
+
+		totalArmorWeight +=
+			armor->GetWeight();
+	}
+
+	// 100 weight is the maximum considered.
+	totalArmorWeight =
+		std::clamp(
+			totalArmorWeight,
+			0.0f,
+			kMaxArmorWeight);
+
+	float weightContribution =
+		settings->Armor.WeightContribution;
+
+	float weightMultiplier =
+		1.0f +
+		(totalArmorWeight * weightContribution);
+
+	// Prevent invalid negative multipliers.
+	weightMultiplier =
+		(std::max)(0.0f,
+			weightMultiplier);
+
 	// ============================================================
+	// Combine Armor Rating + Weight
+	// ============================================================
+	//
+	// Armor Rating remains the primary source of mitigation.
+	// Weight modifies the effectiveness of the existing armor.
+	//
+	// Example:
+	//
+	// 800 AR + 0 weight
+	//     -> armorRatio * 1.00
+	//
+	// 800 AR + 100 weight
+	//     -> armorRatio * 1.25
+
+	float baseArmorFactor =
+		std::clamp(
+			armorRatio * weightMultiplier,
+			0.0f,
+			1.0f);
 
 	// ============================================================
 	// Hyperbolic Scaling
@@ -1027,20 +1057,28 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 		settings->Global.ArmorScalingCurve;
 
 	float r1 =
-		armorRatio * curveStrength;
+		baseArmorFactor *
+		curveStrength;
 
 	float curvedArmor =
-		r1 / (1.0f + r1);
+		r1 /
+		(1.0f + r1);
 
-	// Calculate the curve value at the 1000 AR cap.
-	// This normalizes the curve so that 1000 AR always
-	// produces exactly 60% damage reduction.
+	// ============================================================
+	// Curve Normalization
+	// ============================================================
+	//
+	// Normalize against the theoretical maximum curve value.
+	// This preserves the 60% maximum reduction.
+
 	float maxCurve =
 		curveStrength /
 		(1.0f + curveStrength);
 
 	float normalizedCurve =
-		maxCurve > 0.0f ? curvedArmor / maxCurve : 0.0f;
+		maxCurve > 0.0f ?
+			curvedArmor / maxCurve :
+			0.0f;
 
 	normalizedCurve =
 		std::clamp(
@@ -1053,14 +1091,18 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	// ============================================================
 
 	float armorReduction =
-		normalizedCurve * kMaxReduction;
+		normalizedCurve *
+		kMaxReduction;
 
 	float armorMultiplier =
-		1.0f - armorReduction;
+		1.0f -
+		armorReduction;
 
-	float preArmorStagger = stagger;
+	float preArmorStagger =
+		stagger;
 
-	stagger *= armorMultiplier;
+	stagger *=
+		armorMultiplier;
 
 	// ============================================================
 	// Debug
@@ -1069,14 +1111,26 @@ float HitEventHandler::ApplyArmorReduction(RE::Actor* target, float stagger)
 	if (settings->Debug.LogArmorCalcs) {
 		logger::info(
 			FMT_STRING(
-				"[Armor Calc] Target={} Armor={} "
-				"ArmorEffectiveness={} ArmorRatio={} "
-				"Curve={} CurvedArmor={} NormalizedCurve={} "
-				"Reduction={} FinalMult={} Before={} After={}"),
+				"[Armor Calc] Target={} "
+				"Armor={} ArmorEffectiveness={} "
+				"ArmorRatio={} "
+				"Weight={} MaxWeight={} "
+				"WeightContribution={} "
+				"WeightMult={} "
+				"BaseFactor={} "
+				"Curve={} CurvedArmor={} "
+				"NormalizedCurve={} "
+				"Reduction={} FinalMult={} "
+				"Before={} After={}"),
 			target->GetName(),
 			totalArmor,
 			armorEffectiveness,
 			armorRatio,
+			totalArmorWeight,
+			kMaxArmorWeight,
+			weightContribution,
+			weightMultiplier,
+			baseArmorFactor,
 			curveStrength,
 			curvedArmor,
 			normalizedCurve,

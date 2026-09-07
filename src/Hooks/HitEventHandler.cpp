@@ -1524,6 +1524,8 @@ void HitEventHandler::PreProcessHit(RE::Actor* target, RE::HitData* hitData)
 }
 
 // API CALLS
+
+// Character Sheet
 float HitEventHandler::GetHandDamage(RE::Actor* a_actor, bool a_leftHand)
 {
 	if (!a_actor) {
@@ -1768,6 +1770,15 @@ float HitEventHandler::GetHandDamage(RE::Actor* a_actor, bool a_leftHand)
 	return 0.0f;
 }
 
+// For Honor Stamina
+float HitEventHandler::GetStaminaMultiplier(RE::Actor* aggressor)
+{
+	if (!_hasForHonorStamina || !_getStaminaMultiplier || !aggressor) {
+		return 1.0f;
+	}
+
+	return _getStaminaMultiplier(aggressor);
+}
 // void HitEventHandler::PoiseCallback_Post(const PRECISION_API::PrecisionHitData& a_precisionHitData, const RE::HitData& hitData)
 // {
 // 	if (!a_precisionHitData.target || !a_precisionHitData.target->Is(RE::FormType::ActorCharacter)) {

@@ -4,6 +4,7 @@
 #include "Events/Events.h"
 #include "Hooks.h"
 #include "Hooks/ActiveEffectHandler.h"
+#include "Hooks/HitEventHandler.h"
 #include "Hooks/Hooks.h"
 #include "Hooks/PoiseAV.h"
 #include "Storage/ActorCache.h"
@@ -47,6 +48,9 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
 				logger::info(
 					"Blade & Blunt not detected. Blade & Blunt armor magic resistance disabled.");
 			}
+
+			// Initialize HitEventHandler / For Honor Stamina integration
+			HitEventHandler::GetSingleton()->InitializeEquipmentCache();
 
 			// ============================================================
 
@@ -101,10 +105,11 @@ void onSKSEInit()
 {
 	auto poiseAV = PoiseAV::GetSingleton();
 	auto avManager = AVManager::GetSingleton();
+
 	avManager->RegisterActorValue(PoiseAV::g_avName, poiseAV);
 
 	auto messaging = SKSE::GetMessagingInterface();
-	messaging->RegisterListener("SKSE", MessageHandler);  // Keep only one listener registration
+	messaging->RegisterListener("SKSE", MessageHandler);
 
 	auto serialization = SKSE::GetSerializationInterface();
 	serialization->SetUniqueID(Serialization::kUniqueID);
@@ -113,12 +118,11 @@ void onSKSEInit()
 	serialization->SetRevertCallback(Serialization::RevertCallback);
 
 	Hooks::Install();
+
 	Events::Register();
 	ActorCache::RegisterEvents();
-	EldenSettings::readSettings();
 
-	// Verify if Milf::GetSingleton()->Load() depends on game data
-	// that isn't loaded yet. If so, move it to the kDataLoaded event instead.
+	EldenSettings::readSettings();
 }
 
 void InitializeLog()

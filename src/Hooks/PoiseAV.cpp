@@ -1,6 +1,7 @@
 #include "Hooks/PoiseAV.h"
 
 #include "ActorValues/AVManager.h"
+#include "Hooks/HitEventHandler.h"
 #include "Storage/ActorCache.h"
 #include "Storage/Settings.h"
 #include "UI/PoiseAVHUD.h"
@@ -531,6 +532,42 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	}
 	float afterDifficulty = a_poiseDamage;
 
+	// Global PC/NPC damage multiplier
+	a_poiseDamage = ApplyDamageModifiers(
+		a_target,
+		a_poiseDamage);
+
+	float afterDamageModifiers = a_poiseDamage;
+
+	// For Honor Stamina multiplier
+	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
+		const float staminaMultiplier =
+			HitEventHandler::GetSingleton()->GetStaminaMultiplier(a_aggressor);
+
+		const float beforeStamina = a_poiseDamage;
+
+		if (settings->Debug.LogPerkCalcs &&
+			std::abs(staminaMultiplier - 1.0f) > 0.001f) {
+			logger::info(
+				FMT_STRING(
+					"[For Honor Stamina] "
+					"Aggressor={} "
+					"Multiplier={} "
+					"Before={} "
+					"After={}"),
+				a_aggressor->GetName(),
+				staminaMultiplier,
+				beforeStamina,
+				beforeStamina * staminaMultiplier);
+		}
+
+		a_poiseDamage *= staminaMultiplier;
+	}
+
+	float afterStamina = a_poiseDamage;
+
+	// Vanilla stagger perks should be LAST
+
 	// Vanilla stagger perks should be LAST
 	if (a_poiseDamage > 0.0f && a_aggressor && a_target != a_aggressor) {
 		auto logStaggerPerks = [](RE::Actor* actor, RE::BGSEntryPointPerkEntry::EntryPoint entryPoint, const char* label) {
@@ -629,16 +666,17 @@ void PoiseAV::DamageAndCheckPoise(RE::Actor* a_target, RE::Actor* a_aggressor, f
 	// Apply final calculated poise damage.
 	a_poiseDamage = std::max(a_poiseDamage, 0.0f);
 	poiseDamagePercent = CheckImpact(a_target, a_poiseDamage, avManager);
-
 	if (settings->Debug.LogStaggerCalcs && a_poiseDamage > 1.0f) {
 		logger::info(
-			FMT_STRING("[Poise Stages] Target={} Initial={} AoO={} Ward={} Level={} Difficulty={} VanillaPerks={}"),
-			a_target->GetName(),
+			FMT_STRING(
+				"[Poise Stages] Target={} Initial={} AoO={} Ward={} Level={} Difficulty={} PC/NPC={} Final={}"),
+			*a_target->GetName(),
 			initialPoiseDamage,
 			afterAoO,
 			afterWard,
 			afterLevelScaling,
 			afterDifficulty,
+			afterDamageModifiers,
 			a_poiseDamage);
 	}
 
